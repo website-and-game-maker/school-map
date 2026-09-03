@@ -13,6 +13,13 @@ export interface FloorPoint {
 export interface FloorEdge {
   a: string;
   b: string;
+  /**
+   * True when the app invented this link to attach an otherwise-unconnected
+   * point (usually a landmark like the Library) to the nearest hallway. It's a
+   * guess — good enough to route with, worth replacing by hand. Shown dashed
+   * in Edit mode.
+   */
+  auto?: boolean;
 }
 
 export interface FloorData {

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { FloorData, FloorPoint } from "../types";
 
 export type EditTool = "select" | "add-junction" | "add-restroom" | "connect";
@@ -14,12 +14,16 @@ interface Props {
   onAddPoint: (x: number, y: number) => void;
   onMovePoint: (id: string, x: number, y: number) => void;
   onToggleEdge: (a: string, b: string) => void;
-  routeLine: [number, number][] | null; // wall-aware pixel path for the segment on this floor
+  routeLine: [number, number][] | null; // wall-aware pixel path for this floor's leg
   startPointId: string | null;
   endPointId: string | null;
+  startLabel: string | null;
+  endLabel: string | null;
+  highlightAt: [number, number] | null; // the step the user tapped in the directions
 }
 
 const CLICK_MOVE_THRESHOLD = 4;
+const ARROW_SPACING = 260; // px between direction arrows along the route
 
 export default function MapCanvas({
   floor,
@@ -35,6 +39,9 @@ export default function MapCanvas({
   routeLine,
   startPointId,
   endPointId,
+  startLabel,
+  endLabel,
+  highlightAt,
 }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragState = useRef<{
@@ -49,9 +56,10 @@ export default function MapCanvas({
     const svg = svgRef.current;
     if (!svg) return [0, 0];
     const rect = svg.getBoundingClientRect();
-    const scaleX = floor.image.w / rect.width;
-    const scaleY = floor.image.h / rect.height;
-    return [(clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY];
+    return [
+      (clientX - rect.left) * (floor.image.w / rect.width),
+      (clientY - rect.top) * (floor.image.h / rect.height),
+    ];
   }
 
   function handleBackgroundClick(e: React.MouseEvent) {
@@ -70,12 +78,7 @@ export default function MapCanvas({
       if (!editMode) return;
       e.stopPropagation();
       if (tool === "select") {
-        dragState.current = {
-          id,
-          startClientX: e.clientX,
-          startClientY: e.clientY,
-          moved: false,
-        };
+        dragState.current = { id, startClientX: e.clientX, startClientY: e.clientY, moved: false };
         (e.target as Element).setPointerCapture(e.pointerId);
       }
     };
@@ -84,9 +87,9 @@ export default function MapCanvas({
   function handlePointerMove(e: React.PointerEvent) {
     const drag = dragState.current;
     if (!drag) return;
-    const dx = e.clientX - drag.startClientX;
-    const dy = e.clientY - drag.startClientY;
-    if (Math.hypot(dx, dy) > CLICK_MOVE_THRESHOLD) drag.moved = true;
+    if (Math.hypot(e.clientX - drag.startClientX, e.clientY - drag.startClientY) > CLICK_MOVE_THRESHOLD) {
+      drag.moved = true;
+    }
     if (drag.moved) {
       const [x, y] = toImageCoords(e.clientX, e.clientY);
       setDragPos({ id: drag.id, x, y });
@@ -121,9 +124,33 @@ export default function MapCanvas({
   }
 
   const points = floor.points;
-  const routeLinePoints = routeLine && routeLine.length > 1 ? routeLine : null;
+  const routePath = routeLine && routeLine.length > 1 ? routeLine : null;
 
-  const showEditablePoints = editMode;
+  // Little chevrons spaced along the route so it's obvious which way to walk.
+  const arrows = useMemo(() => {
+    if (!routePath) return [];
+    const out: { x: number; y: number; angle: number }[] = [];
+    let carry = ARROW_SPACING / 2;
+    for (let i = 1; i < routePath.length; i++) {
+      const [x0, y0] = routePath[i - 1];
+      const [x1, y1] = routePath[i];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      if (len < 1) continue;
+      const angle = (Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI;
+      let travelled = carry;
+      while (travelled <= len) {
+        out.push({
+          x: x0 + ((x1 - x0) * travelled) / len,
+          y: y0 + ((y1 - y0) * travelled) / len,
+          angle,
+        });
+        travelled += ARROW_SPACING;
+      }
+      carry = travelled - len;
+    }
+    return out;
+  }, [routePath]);
+
   const restrooms = Object.entries(points).filter(([, p]) => p.poiType === "restroom");
 
   return (
@@ -147,7 +174,7 @@ export default function MapCanvas({
             return (
               <line
                 key={i}
-                className="edit-edge"
+                className={`edit-edge${edge.auto ? " auto" : ""}`}
                 x1={a.x}
                 y1={a.y}
                 x2={b.x}
@@ -156,12 +183,25 @@ export default function MapCanvas({
             );
           })}
 
-        {routeLinePoints && (
-          <polyline
-            className="route-line"
-            points={routeLinePoints.map(([x, y]) => `${x},${y}`).join(" ")}
-            fill="none"
-          />
+        {routePath && (
+          <>
+            {/* soft casing under the dashes, so the route reads on a busy plan */}
+            <polyline
+              className="route-casing"
+              points={routePath.map(([x, y]) => `${x},${y}`).join(" ")}
+              fill="none"
+            />
+            <polyline
+              className="route-line"
+              points={routePath.map(([x, y]) => `${x},${y}`).join(" ")}
+              fill="none"
+            />
+            {arrows.map((a, i) => (
+              <g key={i} className="route-arrowhead" transform={`translate(${a.x},${a.y}) rotate(${a.angle})`}>
+                <path d="M -9 -9 L 9 0 L -9 9 Z" />
+              </g>
+            ))}
+          </>
         )}
 
         {!editMode &&
@@ -174,35 +214,33 @@ export default function MapCanvas({
             </g>
           ))}
 
-        {startPointId && points[startPointId] && (
-          <g
-            className="marker start-marker"
-            transform={`translate(${points[startPointId].x},${points[startPointId].y})`}
-          >
-            <circle r={22} />
-            <circle r={8} className="dot" />
-          </g>
-        )}
-        {endPointId && points[endPointId] && (
-          <g
-            className="marker end-marker"
-            transform={`translate(${points[endPointId].x},${points[endPointId].y})`}
-          >
-            <circle r={26} />
-            <circle r={9} className="dot" />
+        {highlightAt && (
+          <g className="step-highlight" transform={`translate(${highlightAt[0]},${highlightAt[1]})`}>
+            <circle r={46} />
+            <circle r={30} className="inner" />
           </g>
         )}
 
-        {showEditablePoints &&
+        {startPointId && points[startPointId] && (
+          <Pin
+            p={points[startPointId]}
+            className="marker start-marker"
+            label={startLabel}
+            radius={9}
+          />
+        )}
+        {endPointId && points[endPointId] && (
+          <Pin p={points[endPointId]} className="marker end-marker" label={endLabel} radius={11} />
+        )}
+
+        {editMode &&
           Object.entries(points).map(([id, p]) => {
             const pos = dragPos && dragPos.id === id ? dragPos : p;
-            const isSelected = selectedId === id;
-            const isPending = pendingConnectId === id;
             return (
               <g
                 key={id}
-                className={`edit-point kind-${p.kind}${isSelected ? " selected" : ""}${
-                  isPending ? " pending" : ""
+                className={`edit-point kind-${p.kind}${selectedId === id ? " selected" : ""}${
+                  pendingConnectId === id ? " pending" : ""
                 }`}
                 transform={`translate(${pos.x},${pos.y})`}
                 onPointerDown={handlePointerDown(id)}
@@ -212,14 +250,40 @@ export default function MapCanvas({
                 }}
               >
                 <circle r={p.kind === "room" ? 16 : 12} />
-                {(p.kind === "junction" || p.kind === "poi") && (
-                  <circle r={4} className="inner-dot" />
-                )}
+                {(p.kind === "junction" || p.kind === "poi") && <circle r={4} className="inner-dot" />}
               </g>
             );
           })}
       </svg>
     </div>
+  );
+}
+
+function Pin({
+  p,
+  className,
+  label,
+  radius,
+}: {
+  p: FloorPoint;
+  className: string;
+  label: string | null;
+  radius: number;
+}) {
+  const width = label ? Math.max(label.length * 17 + 44, 130) : 0;
+  return (
+    <g className={className} transform={`translate(${p.x},${p.y})`}>
+      <circle r={radius * 2.6} className="halo" />
+      <circle r={radius} className="dot" />
+      {label && (
+        <g className="pin-label" transform={`translate(0,${-radius * 2.6 - 16})`}>
+          <rect x={-width / 2} y={-42} width={width} height={42} rx={12} />
+          <text y={-14} textAnchor="middle">
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
   );
 }
 
