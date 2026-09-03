@@ -4,9 +4,10 @@ An interactive wayfinding map for Westlake High School — search a room number 
 "restroom"), get a walking route drawn on the real floor plan, across all three
 levels if it needs stairs.
 
-**Status: v2.** All three floors traced (Main, Lower, Upper — ~280 rooms total),
-routing works across floors, and there's an in-app editor for fixing hallway paths
-and marking restrooms (none are labeled on the source PDF).
+**Status: v3.** All three floors traced (Main, Lower, Upper — ~280 rooms total),
+routing works across floors, the drawn route hugs actual hallways instead of
+cutting through walls, and there's an in-app editor for fixing hallway paths and
+marking restrooms (none are labeled on the source PDF).
 
 ## How it works
 
@@ -18,14 +19,21 @@ and marking restrooms (none are labeled on the source PDF).
   `src/data/floors/{lower,main,upper}.json`. `src/data/floors/stairs.json` lists
   the connections *between* floors.
 - Room and hallway-junction positions were traced by eye from the scan (OCR doesn't
-  work on it — see below) and are approximate, not surveyed. **The hallway paths in
-  particular are a rough first pass** — they connect the right general areas but
-  don't reliably follow actual walls yet. Use **Edit this floor** in the app to fix
-  them; see "Editing the map" below.
-- Routing is Dijkstra over the combined 3-floor graph (`src/lib/pathfind.ts`).
-  Multiple valid starting points (e.g. "Entrance C" exists on all three floors) are
-  wired to a shared virtual start node, so it automatically picks whichever floor
-  gets you there with the fewest stairs — same trick is used for "nearest restroom."
+  work on it — see below) and are approximate, not surveyed.
+- Routing happens in two layers. `src/lib/pathfind.ts` runs Dijkstra over the
+  combined 3-floor graph to decide *which* rooms/junctions/stairs the route passes
+  through — multiple valid starting points (e.g. "Entrance C" exists on all three
+  floors) are wired to a shared virtual start node, so it automatically picks
+  whichever floor gets you there with the fewest stairs (same trick for "nearest
+  restroom"). Then `src/lib/navmesh.ts` turns that sequence of graph points into
+  the line you actually see: it rasterizes a walkable "ribbon" around every edge in
+  the graph (a thick capsule the width of a hallway) and runs grid A* through that
+  ribbon between each pair of points, instead of just drawing a straight line
+  between them. That's what keeps the drawn route inside hallways and off of walls,
+  even where a straight line between two graph points would have cut a corner
+  through a room. If a route ever looks wrong, the fix is still the graph itself
+  (Edit mode, below) — the ribbon is only ever as accurate as the edges you've
+  drawn.
 - Pan/zoom is `react-zoom-pan-pinch`.
 
 ## The staircase problem
@@ -93,7 +101,10 @@ src/
   types.ts               — FloorData / FloorPoint / FloorEdge / StairLink shapes
   components/MapCanvas.tsx — background image + SVG overlay; also the edit-mode
                               pointer/drag/click handling
-  lib/pathfind.ts         — multi-floor Dijkstra (virtual start/end node trick)
+  lib/pathfind.ts         — multi-floor Dijkstra (virtual start/end node trick):
+                              decides which rooms/junctions/stairs a route passes through
+  lib/navmesh.ts          — ribbonizes the graph into a walkable-area grid and runs
+                              A* through it, so the drawn line hugs hallways/avoids walls
   lib/save.ts             — save-to-disk (dev) + download-JSON (always) helpers
   data/floors.ts          — wires up the three floors' JSON + images
   data/floors/{lower,main,upper}.json — the actual graphs

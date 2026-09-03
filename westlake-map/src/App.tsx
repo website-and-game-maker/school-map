@@ -10,6 +10,7 @@ import {
   type FloorSegment,
 } from "./lib/pathfind";
 import { downloadJson, saveFloorToDisk } from "./lib/save";
+import { buildWalkGrid, wallAwarePath } from "./lib/navmesh";
 import type { FloorData, FloorId, FloorPoint } from "./types";
 import "./App.css";
 
@@ -240,6 +241,23 @@ export default function App() {
   const routeStart = currentSeg?.points[0] ?? null;
   const routeEnd = currentSeg?.points[currentSeg.points.length - 1] ?? null;
 
+  // The graph only tells us *which* points a route passes through — it
+  // doesn't guarantee a straight line between two of them stays off of
+  // walls. Turn the current segment's point-to-point hops into an actual
+  // walkable-area path (see lib/navmesh.ts) before handing it to MapCanvas.
+  const walkGrid = useMemo(() => buildWalkGrid(floor), [floor]);
+  const routeLine = useMemo<[number, number][] | null>(() => {
+    if (!currentSeg || currentSeg.points.length < 2) return null;
+    const pts = currentSeg.points.map((id) => floor.points[id]).filter(Boolean) as FloorPoint[];
+    if (pts.length < 2) return null;
+    const full: [number, number][] = [[pts[0].x, pts[0].y]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const hop = wallAwarePath(walkGrid, [pts[i].x, pts[i].y], [pts[i + 1].x, pts[i + 1].y]);
+      full.push(...hop.slice(1));
+    }
+    return full;
+  }, [currentSeg, floor, walkGrid]);
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -463,7 +481,7 @@ export default function App() {
               onAddPoint={onAddPoint}
               onMovePoint={onMovePoint}
               onToggleEdge={onToggleEdge}
-              routePoints={currentSeg ? currentSeg.points : null}
+              routeLine={editMode ? null : routeLine}
               startPointId={editMode ? null : routeStart}
               endPointId={editMode ? null : routeEnd}
             />

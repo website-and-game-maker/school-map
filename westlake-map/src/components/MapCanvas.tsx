@@ -14,7 +14,7 @@ interface Props {
   onAddPoint: (x: number, y: number) => void;
   onMovePoint: (id: string, x: number, y: number) => void;
   onToggleEdge: (a: string, b: string) => void;
-  routePoints: string[] | null; // point ids, in order, for the segment on this floor
+  routeLine: [number, number][] | null; // wall-aware pixel path for the segment on this floor
   startPointId: string | null;
   endPointId: string | null;
 }
@@ -32,7 +32,7 @@ export default function MapCanvas({
   onAddPoint,
   onMovePoint,
   onToggleEdge,
-  routePoints,
+  routeLine,
   startPointId,
   endPointId,
 }: Props) {
@@ -121,10 +121,7 @@ export default function MapCanvas({
   }
 
   const points = floor.points;
-  const routeLine =
-    routePoints && routePoints.length > 1
-      ? routePoints.map((id) => points[id]).filter(Boolean)
-      : null;
+  const routeLinePoints = routeLine && routeLine.length > 1 ? routeLine : null;
 
   const showEditablePoints = editMode;
   const restrooms = Object.entries(points).filter(([, p]) => p.poiType === "restroom");
@@ -159,10 +156,10 @@ export default function MapCanvas({
             );
           })}
 
-        {routeLine && (
+        {routeLinePoints && (
           <polyline
             className="route-line"
-            points={routeLine.map((p) => `${p.x},${p.y}`).join(" ")}
+            points={routeLinePoints.map(([x, y]) => `${x},${y}`).join(" ")}
             fill="none"
           />
         )}
