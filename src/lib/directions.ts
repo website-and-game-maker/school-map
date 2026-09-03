@@ -5,8 +5,7 @@
 // produces, not from the raw graph — so a turn appears in the directions at the
 // same place the drawn line actually bends.
 
-import { pathLengthPx } from "./navmesh";
-import type { FloorData, FloorId } from "../types";
+import type { FloorId } from "../types";
 
 // --- Scale -----------------------------------------------------------------
 //
@@ -35,8 +34,15 @@ const FLOOR_HEIGHT: Record<FloorId, number> = { lower: 0, main: 1, upper: 2 };
 
 export interface RouteLeg {
   floor: FloorId;
-  points: string[]; // graph point ids, in order
-  path: [number, number][]; // wall-aware pixel polyline on this floor
+  path: [number, number][]; // the drawn walking line on this floor
+}
+
+function pathLengthPx(path: [number, number][]): number {
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    total += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+  }
+  return total;
 }
 
 export type StepKind = "start" | "walk" | "stairs" | "arrive";
@@ -55,13 +61,6 @@ export interface Directions {
   totalFeet: number;
   minutes: number;
   flights: number;
-}
-
-export function pointLabel(floor: FloorData, id: string): string {
-  const p = floor.points[id];
-  if (!p) return id;
-  if (p.kind === "room") return `Room ${id}`;
-  return p.label ?? id;
 }
 
 function bearing(a: [number, number], b: [number, number]): number {
@@ -199,9 +198,8 @@ function stairPhrase(from: FloorId, to: FloorId): string {
  */
 export function buildDirections(
   legs: RouteLeg[],
-  floors: Record<FloorId, FloorData>,
-  startId: string,
-  endId: string
+  startLabel: string,
+  endLabel: string
 ): Directions {
   const steps: DirectionStep[] = [];
   // Measure the drawn path itself rather than summing the straightened steps —
@@ -216,7 +214,7 @@ export function buildDirections(
 
   steps.push({
     kind: "start",
-    text: `Start at ${pointLabel(floors[firstLeg.floor], startId)}`,
+    text: `Start at ${startLabel}`,
     floor: firstLeg.floor,
     legIndex: 0,
     at: firstLeg.path[0] ?? null,
@@ -274,7 +272,7 @@ export function buildDirections(
       }
       steps.push({
         kind: "arrive",
-        text: `${pointLabel(floors[leg.floor], endId)} is${side || " right there"}`,
+        text: `${endLabel} is${side || " right there"}`,
         floor: leg.floor,
         legIndex,
         at: leg.path[leg.path.length - 1] ?? null,

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { FloorData, FloorPoint } from "../types";
 
-export type EditTool = "select" | "add-junction" | "add-restroom" | "connect";
+export type EditTool = "select" | "add-restroom" | "add-stairs";
 
 interface Props {
   floor: FloorData;
@@ -9,14 +9,12 @@ interface Props {
   editMode: boolean;
   tool: EditTool;
   selectedId: string | null;
-  pendingConnectId: string | null;
   onSelectPoint: (id: string | null) => void;
   onAddPoint: (x: number, y: number) => void;
   onMovePoint: (id: string, x: number, y: number) => void;
-  onToggleEdge: (a: string, b: string) => void;
-  routeLine: [number, number][] | null; // wall-aware pixel path for this floor's leg
-  startPointId: string | null;
-  endPointId: string | null;
+  routeLine: [number, number][] | null; // the walking line drawn on this floor
+  startAt: [number, number] | null;
+  endAt: [number, number] | null;
   startLabel: string | null;
   endLabel: string | null;
   highlightAt: [number, number] | null; // the step the user tapped in the directions
@@ -31,14 +29,12 @@ export default function MapCanvas({
   editMode,
   tool,
   selectedId,
-  pendingConnectId,
   onSelectPoint,
   onAddPoint,
   onMovePoint,
-  onToggleEdge,
   routeLine,
-  startPointId,
-  endPointId,
+  startAt,
+  endAt,
   startLabel,
   endLabel,
   highlightAt,
@@ -65,7 +61,7 @@ export default function MapCanvas({
   function handleBackgroundClick(e: React.MouseEvent) {
     if (!editMode) return;
     if (e.target !== svgRef.current) return; // a point/edge already handled it
-    if (tool === "add-junction" || tool === "add-restroom") {
+    if (tool === "add-restroom" || tool === "add-stairs") {
       const [x, y] = toImageCoords(e.clientX, e.clientY);
       onAddPoint(x, y);
     } else if (tool === "select") {
@@ -111,16 +107,7 @@ export default function MapCanvas({
 
   function handlePointClick(id: string) {
     if (!editMode) return;
-    if (tool === "connect") {
-      if (pendingConnectId && pendingConnectId !== id) {
-        onToggleEdge(pendingConnectId, id);
-        onSelectPoint(null);
-      } else {
-        onSelectPoint(id);
-      }
-    } else if (tool === "select") {
-      onSelectPoint(id);
-    }
+    if (tool === "select") onSelectPoint(id);
   }
 
   const points = floor.points;
@@ -152,6 +139,7 @@ export default function MapCanvas({
   }, [routePath]);
 
   const restrooms = Object.entries(points).filter(([, p]) => p.poiType === "restroom");
+  const stairMarkers = Object.entries(points).filter(([, p]) => p.poiType === "stairs");
 
   return (
     <div className="map-canvas" style={{ width: floor.image.w, height: floor.image.h }}>
@@ -166,23 +154,6 @@ export default function MapCanvas({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
-        {editMode &&
-          floor.edges.map((edge, i) => {
-            const a = points[edge.a];
-            const b = points[edge.b];
-            if (!a || !b) return null;
-            return (
-              <line
-                key={i}
-                className={`edit-edge${edge.auto ? " auto" : ""}`}
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-              />
-            );
-          })}
-
         {routePath && (
           <>
             {/* soft casing under the dashes, so the route reads on a busy plan */}
@@ -214,6 +185,13 @@ export default function MapCanvas({
             </g>
           ))}
 
+        {stairMarkers.map(([id, p]) => (
+          <g key={id} className="poi stairs" transform={`translate(${p.x},${p.y})`}>
+            <rect x={-19} y={-19} width={38} height={38} rx={9} />
+            <path d="M -10 8 L -3 8 L -3 1 L 3 1 L 3 -6 L 10 -6" />
+          </g>
+        ))}
+
         {highlightAt && (
           <g className="step-highlight" transform={`translate(${highlightAt[0]},${highlightAt[1]})`}>
             <circle r={46} />
@@ -221,17 +199,8 @@ export default function MapCanvas({
           </g>
         )}
 
-        {startPointId && points[startPointId] && (
-          <Pin
-            p={points[startPointId]}
-            className="marker start-marker"
-            label={startLabel}
-            radius={9}
-          />
-        )}
-        {endPointId && points[endPointId] && (
-          <Pin p={points[endPointId]} className="marker end-marker" label={endLabel} radius={11} />
-        )}
+        {startAt && <Pin at={startAt} className="marker start-marker" label={startLabel} radius={9} />}
+        {endAt && <Pin at={endAt} className="marker end-marker" label={endLabel} radius={11} />}
 
         {editMode &&
           Object.entries(points).map(([id, p]) => {
@@ -239,9 +208,7 @@ export default function MapCanvas({
             return (
               <g
                 key={id}
-                className={`edit-point kind-${p.kind}${selectedId === id ? " selected" : ""}${
-                  pendingConnectId === id ? " pending" : ""
-                }`}
+                className={`edit-point kind-${p.kind}${selectedId === id ? " selected" : ""}`}
                 transform={`translate(${pos.x},${pos.y})`}
                 onPointerDown={handlePointerDown(id)}
                 onClick={(e) => {
@@ -260,19 +227,19 @@ export default function MapCanvas({
 }
 
 function Pin({
-  p,
+  at,
   className,
   label,
   radius,
 }: {
-  p: FloorPoint;
+  at: [number, number];
   className: string;
   label: string | null;
   radius: number;
 }) {
   const width = label ? Math.max(label.length * 17 + 44, 130) : 0;
   return (
-    <g className={className} transform={`translate(${p.x},${p.y})`}>
+    <g className={className} transform={`translate(${at[0]},${at[1]})`}>
       <circle r={radius * 2.6} className="halo" />
       <circle r={radius} className="dot" />
       {label && (

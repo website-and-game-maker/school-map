@@ -1,5 +1,4 @@
 import type { FloorData, FloorId, StairLink } from "../types";
-import { withAutoLinks } from "../lib/autolink";
 
 import mainData from "./floors/main.json";
 import lowerData from "./floors/lower.json";
@@ -18,12 +17,10 @@ export const FLOOR_IMAGES: Record<FloorId, string> = {
 
 export const FLOOR_ORDER: FloorId[] = ["lower", "main", "upper"];
 
-// Landmarks were traced as points but never connected to a hallway, so they
-// get auto-linked to the nearest connected point on load — see lib/autolink.ts.
 export const INITIAL_FLOORS: Record<FloorId, FloorData> = {
-  lower: withAutoLinks(lowerData as unknown as FloorData),
-  main: withAutoLinks(mainData as unknown as FloorData),
-  upper: withAutoLinks(upperData as unknown as FloorData),
+  lower: lowerData as unknown as FloorData,
+  main: mainData as unknown as FloorData,
+  upper: upperData as unknown as FloorData,
 };
 
 export const INITIAL_STAIRS: StairLink[] = stairsData as unknown as StairLink[];

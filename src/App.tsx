@@ -3,11 +3,10 @@ import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 
 import MapCanvas, { type EditTool } from "./components/MapCanvas";
 import SearchBox from "./components/SearchBox";
 import { FLOOR_IMAGES, FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
-import { buildAdjacency, nodeKey, shortestPathMulti, splitByFloor } from "./lib/pathfind";
-import { buildWalkGrid, wallAwarePath, type WalkGrid } from "./lib/navmesh";
-import { walkMasks } from "./lib/walkable";
-import { buildDirections, FLOOR_LABELS, pointLabel, type RouteLeg } from "./lib/directions";
+import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
+import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
 import { buildSearchIndex, searchItems, type SearchItem } from "./lib/search";
+import { linksFromMarks, stairMarks } from "./lib/stairsFromMarks";
 import { downloadJson, saveFloorToDisk } from "./lib/save";
 import type { FloorData, FloorId, FloorPoint } from "./types";
 import "./App.css";
@@ -16,7 +15,12 @@ const FLOOR_SHORT: Record<FloorId, string> = { lower: "Lower", main: "Main", upp
 
 export default function App() {
   const [floors, setFloors] = useState<Record<FloorId, FloorData>>(INITIAL_FLOORS);
-  const [stairs] = useState(INITIAL_STAIRS);
+  // Stair links: the guessed ones from stairs.json, plus any the user has
+  // marked in Edit mode (those get matched across floors automatically and
+  // count as verified).
+  const markedStairs = useMemo(() => linksFromMarks(floors), [floors]);
+  const stairs = useMemo(() => [...markedStairs, ...INITIAL_STAIRS], [markedStairs]);
+  const markCount = useMemo(() => stairMarks(floors).length, [floors]);
   const [floorId, setFloorId] = useState<FloorId>("main");
 
   const [fromQuery, setFromQuery] = useState("Entrance C");
@@ -35,7 +39,6 @@ export default function App() {
   const mapAreaRef = useRef<HTMLDivElement | null>(null);
 
   const floor = floors[floorId];
-  const adjacency = useMemo(() => buildAdjacency(floors, stairs), [floors, stairs]);
   const searchIndex = useMemo(() => buildSearchIndex(floors), [floors]);
   const restroomCount = useMemo(
     () => searchIndex.filter((i) => i.kind === "restroom").length,
@@ -62,104 +65,57 @@ export default function App() {
     [searchIndex, toQuery, toItem, restroomCount]
   );
 
-  // An entrance letter exists on several floors under the same point id, so a
-  // route from/to one should be free to use whichever floor's copy is closest.
-  const nodesFor = useCallback(
-    (item: SearchItem | null): string[] => {
+  // An entrance letter exists on several floors under the same point id, and
+  // "nearest restroom" is whichever one is genuinely closest — so each end of
+  // a route can offer several candidate points and let the search decide.
+  const endpointsFor = useCallback(
+    (item: SearchItem | null): Endpoint[] => {
       if (!item) return [];
+      const at = (floor: FloorId, id: string): Endpoint | null => {
+        const p = floors[floor].points[id];
+        return p ? { floor, x: p.x, y: p.y } : null;
+      };
       if (item.kind === "nearest-restroom") {
-        return searchIndex.filter((i) => i.kind === "restroom").map((i) => nodeKey(i.floor, i.id));
+        return searchIndex
+          .filter((i) => i.kind === "restroom")
+          .map((i) => at(i.floor, i.id))
+          .filter(Boolean) as Endpoint[];
       }
       if (item.kind === "entrance") {
-        return FLOOR_ORDER.filter((f) => floors[f].points[item.id]).map((f) => nodeKey(f, item.id));
+        return FLOOR_ORDER.map((f) => at(f, item.id)).filter(Boolean) as Endpoint[];
       }
-      return [nodeKey(item.floor, item.id)];
+      const one = at(item.floor, item.id);
+      return one ? [one] : [];
     },
     [floors, searchIndex]
   );
 
   const routeResult = useMemo(() => {
-    const starts = nodesFor(fromItem);
-    const ends = nodesFor(toItem);
+    if (editMode) return null;
+    const starts = endpointsFor(fromItem);
+    const ends = endpointsFor(toItem);
     if (starts.length === 0 || ends.length === 0) return null;
-    return shortestPathMulti(adjacency, starts, ends);
-  }, [adjacency, fromItem, toItem, nodesFor]);
+    return computeRoute(floors, stairs, starts, ends, PX_PER_FOOT);
+  }, [floors, stairs, fromItem, toItem, endpointsFor, editMode]);
 
-  const segments = useMemo(() => (routeResult ? splitByFloor(routeResult.path) : []), [routeResult]);
+  const legs = useMemo(() => routeResult?.legs ?? [], [routeResult]);
+  const segments = legs;
   const [segIndex, setSegIndex] = useState(0);
 
-  // Walkable-area grids are only needed to draw a route, and rebuilding one on
-  // every edit-mode drag would be wasted work — so they're built lazily, and
-  // then kept, so clearing a route doesn't throw them away and pay for the
-  // rebuild on the next search.
-  const [gridsWanted, setGridsWanted] = useState(false);
-  useEffect(() => {
-    if (segments.length > 0) setGridsWanted(true);
-  }, [segments.length]);
-  const needGrids = gridsWanted && !editMode;
-  const masks = useMemo(() => walkMasks(), []);
-  const gridLower = useMemo(
-    () => (needGrids ? buildWalkGrid(floors.lower, masks.lower) : null),
-    [needGrids, floors.lower, masks]
-  );
-  const gridMain = useMemo(
-    () => (needGrids ? buildWalkGrid(floors.main, masks.main) : null),
-    [needGrids, floors.main, masks]
-  );
-  const gridUpper = useMemo(
-    () => (needGrids ? buildWalkGrid(floors.upper, masks.upper) : null),
-    [needGrids, floors.upper, masks]
-  );
-  const grids = useMemo<Record<FloorId, WalkGrid | null>>(
-    () => ({ lower: gridLower, main: gridMain, upper: gridUpper }),
-    [gridLower, gridMain, gridUpper]
-  );
-
-  // The graph says which points a route passes through; navmesh turns each hop
-  // into a line that stays inside real walkable space.
-  const legs = useMemo<RouteLeg[]>(() => {
-    return segments.map((seg) => {
-      const f = floors[seg.floor];
-      const grid = grids[seg.floor];
-      const pts = seg.points.map((id) => f.points[id]).filter(Boolean) as FloorPoint[];
-      if (!grid || pts.length === 0) {
-        return { floor: seg.floor, points: seg.points, path: pts.map((p) => [p.x, p.y] as [number, number]) };
-      }
-      const path: [number, number][] = [[pts[0].x, pts[0].y]];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const hop = wallAwarePath(grid, [pts[i].x, pts[i].y], [pts[i + 1].x, pts[i + 1].y]);
-        path.push(...hop.slice(1));
-      }
-      return { floor: seg.floor, points: seg.points, path };
-    });
-  }, [segments, floors, grids]);
-
   const directions = useMemo(() => {
-    if (!fromItem || !toItem || legs.length === 0) return null;
-    const endId = legs[legs.length - 1].points[legs[legs.length - 1].points.length - 1];
-    const startId = legs[0].points[0];
-    return buildDirections(legs, floors, startId, endId);
-  }, [legs, floors, fromItem, toItem]);
-
-  // Did this route lean on a link the app invented (see lib/autolink.ts)? If
-  // so the drawn line near that end is a straight-line guess, and saying so is
-  // better than quietly showing a confident-looking route.
-  const usesGuessedLink = useMemo(() => {
-    return segments.some((seg) => {
-      const f = floors[seg.floor];
-      for (let i = 0; i < seg.points.length - 1; i++) {
-        const a = seg.points[i];
-        const b = seg.points[i + 1];
-        const edge = f.edges.find((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a));
-        if (edge?.auto) return true;
-      }
-      return false;
-    });
-  }, [segments, floors]);
+    if (!routeResult || legs.length === 0 || !fromItem || !toItem) return null;
+    const startLabel = fromItem.kind === "room" ? `Room ${fromItem.label}` : fromItem.label;
+    const endLabel =
+      toItem.kind === "room"
+        ? `Room ${toItem.label}`
+        : toItem.kind === "nearest-restroom"
+          ? "The nearest restroom"
+          : toItem.label;
+    return buildDirections(legs, startLabel, endLabel);
+  }, [routeResult, legs, fromItem, toItem]);
 
   const currentLeg = legs[segIndex] ?? null;
-  const routeStartId = currentLeg?.points[0] ?? null;
-  const routeEndId = currentLeg?.points[currentLeg.points.length - 1] ?? null;
+  const isFirstLeg = segIndex === 0;
   const isFinalLeg = segIndex === legs.length - 1;
 
   // ---------------- map framing ----------------
@@ -190,7 +146,7 @@ export default function App() {
   );
 
   const frameLeg = useCallback(
-    (leg: RouteLeg | null) => {
+    (leg: { path: [number, number][] } | null) => {
       if (!leg || leg.path.length === 0) return;
       const xs = leg.path.map((p) => p[0]);
       const ys = leg.path.map((p) => p[1]);
@@ -268,17 +224,21 @@ export default function App() {
   // ---------------- edit mode ----------------
 
   function updateFloor(updater: (f: FloorData) => FloorData) {
+    // Cached distance fields are keyed to point positions, so moving a stair
+    // or a room invalidates them.
+    clearRouteCache();
     setFloors((prev) => ({ ...prev, [floorId]: updater(prev[floorId]) }));
   }
 
   function onAddPoint(x: number, y: number) {
-    const kind = tool === "add-restroom" ? "poi" : "junction";
-    const id = kind === "poi" ? `poi-${Date.now()}` : `J_${Math.floor(Math.random() * 100000)}`;
+    const isStairs = tool === "add-stairs";
+    const id = `${isStairs ? "stairs" : "wc"}-${Date.now()}`;
     const point: FloorPoint = {
       x: Math.round(x),
       y: Math.round(y),
-      kind,
-      ...(kind === "poi" ? { poiType: "restroom", label: "Restroom" } : {}),
+      kind: "poi",
+      poiType: isStairs ? "stairs" : "restroom",
+      label: isStairs ? "Stairs" : "Restroom",
     };
     updateFloor((f) => ({ ...f, points: { ...f.points, [id]: point } }));
     setSelectedId(id);
@@ -289,16 +249,6 @@ export default function App() {
       ...f,
       points: { ...f.points, [id]: { ...f.points[id], x: Math.round(x), y: Math.round(y) } },
     }));
-  }
-
-  function onToggleEdge(a: string, b: string) {
-    updateFloor((f) => {
-      const exists = f.edges.some((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a));
-      const edges = exists
-        ? f.edges.filter((e) => !((e.a === a && e.b === b) || (e.a === b && e.b === a)))
-        : [...f.edges, { a, b }];
-      return { ...f, edges };
-    });
   }
 
   function deleteSelected() {
@@ -466,13 +416,7 @@ export default function App() {
                 ))}
               </ol>
 
-              {usesGuessedLink && (
-                <p className="hint caution">
-                  Part of this route follows a link the app guessed, because no hallway is traced to
-                  that spot yet — treat the last stretch as approximate.
-                </p>
-              )}
-              {routeResult.usedStairs.length > 0 && (
+              {routeResult.stairs.length > 0 && (
                 <p className="hint">
                   Stair locations are still a best guess — see the note at the bottom.
                 </p>
@@ -517,21 +461,19 @@ export default function App() {
       {editMode && (
         <div className="edit-panel">
           <p className="hint">
-            Fix hallway paths, add restrooms, or move anything that's off — you're editing{" "}
-            <strong>{FLOOR_LABELS[floorId]}</strong>.
+            Editing <strong>{FLOOR_LABELS[floorId]}</strong>. Routes follow the walls traced from the
+            plan itself, so hallways don't need drawing — what's still worth marking is stairs and
+            restrooms, which the plan doesn't label.
           </p>
           <div className="tool-row">
             <button className={tool === "select" ? "active" : ""} onClick={() => setTool("select")}>
               Move
             </button>
             <button
-              className={tool === "add-junction" ? "active" : ""}
-              onClick={() => setTool("add-junction")}
+              className={tool === "add-stairs" ? "active" : ""}
+              onClick={() => setTool("add-stairs")}
             >
-              + Hallway point
-            </button>
-            <button className={tool === "connect" ? "active" : ""} onClick={() => setTool("connect")}>
-              Connect
+              + Stairs
             </button>
             <button
               className={tool === "add-restroom" ? "active" : ""}
@@ -542,10 +484,14 @@ export default function App() {
           </div>
           <p className="tool-hint">
             {tool === "select" && "Click a point to select it, drag to move it."}
-            {tool === "add-junction" &&
-              "Click empty hallway space to drop a path point — put these where hallways actually bend, then use Connect to link them."}
-            {tool === "connect" && "Click one point, then another, to add or remove the path between them."}
+            {tool === "add-stairs" &&
+              "Click a stairwell. Mark the same one on each floor it serves and they're linked automatically — that's what replaces the guessed stair links."}
             {tool === "add-restroom" && "Click anywhere on the map to mark a restroom."}
+          </p>
+          <p className="tool-hint">
+            {markCount === 0
+              ? "No stairs marked yet — routes between floors are using guesses."
+              : `${markCount} stair marker${markCount === 1 ? "" : "s"} placed, forming ${markedStairs.length} linked stairwell${markedStairs.length === 1 ? "" : "s"}.`}
           </p>
 
           {selectedPoint && (
@@ -553,7 +499,7 @@ export default function App() {
               <p className="inspector-title">
                 {selectedId} <span className="kind-tag">{selectedPoint.kind}</span>
               </p>
-              {(selectedPoint.kind === "poi" || selectedPoint.kind === "junction") && (
+              {selectedPoint.kind === "poi" && (
                 <input
                   value={selectedPoint.label ?? ""}
                   placeholder="Label (optional)"
@@ -586,10 +532,10 @@ export default function App() {
           <p className="roadmap-title">Still rough / coming later</p>
           <ul>
             <li>
-              Stairs are placed at each shared entrance as a best guess — not yet confirmed against
-              the real building.
+              Stairwells aren't marked on the plan, and they're not something the scan can be read
+              for — mark them in Edit mode and cross-floor routes become exact.
             </li>
-            <li>Restrooms aren't on the source plan — mark them with the editor.</li>
+            <li>Restrooms aren't on the plan either — mark those the same way.</li>
             <li>Photo walkthroughs, live hallway traffic, class/teacher search.</li>
           </ul>
           <p className="disclaimer">
@@ -619,20 +565,26 @@ export default function App() {
               editMode={editMode}
               tool={tool}
               selectedId={selectedId}
-              pendingConnectId={tool === "connect" ? selectedId : null}
               onSelectPoint={setSelectedId}
               onAddPoint={onAddPoint}
               onMovePoint={onMovePoint}
-              onToggleEdge={onToggleEdge}
               routeLine={editMode ? null : currentLeg?.path ?? null}
-              startPointId={editMode ? null : routeStartId}
-              endPointId={editMode ? null : routeEndId}
+              startAt={!editMode && currentLeg ? currentLeg.path[0] : null}
+              endAt={!editMode && currentLeg ? currentLeg.path[currentLeg.path.length - 1] : null}
               startLabel={
-                !editMode && routeStartId && segIndex === 0
-                  ? pointLabel(floor, routeStartId)
+                !editMode && isFirstLeg && fromItem
+                  ? fromItem.kind === "room"
+                    ? `Room ${fromItem.label}`
+                    : fromItem.label
                   : null
               }
-              endLabel={!editMode && routeEndId && isFinalLeg ? pointLabel(floor, routeEndId) : null}
+              endLabel={
+                !editMode && isFinalLeg && toItem
+                  ? toItem.kind === "room"
+                    ? `Room ${toItem.label}`
+                    : toItem.label
+                  : null
+              }
               highlightAt={activeStep !== null ? directions?.steps[activeStep]?.at ?? null : null}
             />
           </TransformComponent>
