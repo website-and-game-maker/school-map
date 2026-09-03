@@ -1,0 +1,280 @@
+:root {
+  --maroon: #7a1f2b;
+  --maroon-dark: #5c1720;
+  --ink: #1c1c1e;
+  --paper: #faf8f6;
+  --line: #e4dfda;
+  --accent: #2d7d6e;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 320px;
+  min-width: 320px;
+  background: #fff;
+  border-right: 1px solid var(--line);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--maroon);
+  color: #fff;
+  font-weight: 800;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand h1 {
+  font-size: 17px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #8a8580;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.field label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a8580;
+}
+
+.field select,
+.field input {
+  font-size: 15px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  outline: none;
+}
+
+.field select:focus,
+.field input:focus {
+  border-color: var(--maroon);
+}
+
+.floor-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.floor-tab {
+  flex: 1;
+  font-size: 12px;
+  padding: 8px 6px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  cursor: pointer;
+  color: #8a8580;
+}
+
+.floor-tab.active {
+  background: var(--maroon);
+  border-color: var(--maroon);
+  color: #fff;
+  font-weight: 600;
+  cursor: default;
+}
+
+.floor-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  list-style: none;
+  padding: 4px;
+  z-index: 10;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.suggestions li button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.suggestions li button:hover {
+  background: var(--paper);
+}
+
+.route-summary {
+  background: #fbf3ee;
+  border: 1px solid #f0ded2;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.route-summary p { margin: 0 0 4px; font-size: 14px; }
+.route-summary .hint { font-size: 12px; color: #8a8580; margin-bottom: 8px; }
+
+.notice {
+  font-size: 13px;
+  color: var(--maroon-dark);
+  background: #fbf3ee;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.clear-btn {
+  font-size: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.roadmap {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.roadmap-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a8580;
+  margin: 0 0 8px;
+}
+
+.roadmap ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+  color: #55504c;
+  line-height: 1.6;
+}
+
+.disclaimer {
+  font-size: 11px;
+  color: #a6a19b;
+  line-height: 1.5;
+}
+
+.map-area {
+  flex: 1;
+  position: relative;
+  background: #efece7;
+  overflow: hidden;
+}
+
+.tp-wrapper, .tp-content {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.map-canvas {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.map-canvas img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  pointer-events: none;
+}
+
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.route-line {
+  stroke: var(--accent);
+  stroke-width: 14;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 2 26;
+  animation: dash 1s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(45,125,110,0.5));
+}
+
+@keyframes dash {
+  to { stroke-dashoffset: -28; }
+}
+
+.marker circle:first-child {
+  fill: rgba(122, 31, 43, 0.12);
+}
+
+.marker .dot {
+  fill: var(--maroon);
+  stroke: #fff;
+  stroke-width: 4;
+}
+
+.end-marker circle:first-child {
+  fill: rgba(45, 125, 110, 0.15);
+}
+
+.end-marker .dot {
+  fill: var(--accent);
+}
