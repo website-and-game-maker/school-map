@@ -1,24 +1,66 @@
 # Westlake Map
 
-An interactive wayfinding map for Westlake High School — search a room number, get a
-walking route drawn right on the real floor plan. Built for freshmen and visitors who
-get lost, and for anyone who wants to find a new way through the halls.
+An interactive wayfinding map for Westlake High School — search a room number (or
+"restroom"), get a walking route drawn on the real floor plan, across all three
+levels if it needs stairs.
 
-**Status: v1 prototype.** Main Level only, ~100 rooms, routing works. Lower Level,
-Upper Level, and the features below are next.
+**Status: v2.** All three floors traced (Main, Lower, Upper — ~280 rooms total),
+routing works across floors, and there's an in-app editor for fixing hallway paths
+and marking restrooms (none are labeled on the source PDF).
 
 ## How it works
 
-- The background is the actual official Westlake floor plan (scanned PDF, rendered to
-  a high-res image) — not a redrawn map, so it's visually accurate from day one.
-- An invisible graph of hallway junctions + room positions sits on top of it
-  (`src/data/mainLevel.json`). Room coordinates were traced by eye from the scan (OCR
-  didn't work — it's a low-quality fax-era scan with almost no machine-readable text)
-  and are approximate, not surveyed. If a marker looks off, nudge its `[x, y]` in that
-  file (pixel coordinates on the 3167×2448 source image) or tell me and I'll fix it.
-- Routing is plain Dijkstra over that graph (`src/lib/pathfind.ts`) — small graph
-  (~130 nodes), so no need for anything fancier.
+- The background for each floor is the actual official Westlake floor plan (scanned
+  PDF pages, rendered to high-res images) — not redrawn, so it's visually accurate
+  from day one.
+- Each floor is its own small graph: `points` (rooms, entrances, hallway junctions,
+  restrooms) and `edges` (which points are walkably connected), in
+  `src/data/floors/{lower,main,upper}.json`. `src/data/floors/stairs.json` lists
+  the connections *between* floors.
+- Room and hallway-junction positions were traced by eye from the scan (OCR doesn't
+  work on it — see below) and are approximate, not surveyed. **The hallway paths in
+  particular are a rough first pass** — they connect the right general areas but
+  don't reliably follow actual walls yet. Use **Edit this floor** in the app to fix
+  them; see "Editing the map" below.
+- Routing is Dijkstra over the combined 3-floor graph (`src/lib/pathfind.ts`).
+  Multiple valid starting points (e.g. "Entrance C" exists on all three floors) are
+  wired to a shared virtual start node, so it automatically picks whichever floor
+  gets you there with the fewest stairs — same trick is used for "nearest restroom."
 - Pan/zoom is `react-zoom-pan-pinch`.
+
+## The staircase problem
+
+The source PDF doesn't mark individual stairwells or elevators. `stairs.json` currently
+connects floors at every point where the *same entrance letter* (A/B/C/D) appears on
+multiple floor pages — six connections total, all flagged `"verified": false`. That's
+a reasonable placeholder (those are real vertical circulation points) but it is a
+guess, not a traced fact. If you know where the actual stairwells are, either edit
+`stairs.json` by hand (shape: `{id, kind, verified, points: {floorId: pointId}}`,
+matching an existing point id per floor it connects) or tell me and I'll place them.
+
+## Editing the map (fixing walls, adding restrooms)
+
+Click **Edit this floor** in the sidebar. Four tools:
+
+- **Move** — click a point to select it (shows an inspector with its id/label and a
+  delete button), drag to reposition it.
+- **+ Hallway point** — click empty hallway space to drop a new junction where a
+  corridor actually bends. Doesn't connect to anything until you use Connect.
+- **Connect** — click one point, then another, to add or remove the path between
+  them. This is the main tool for fixing "walks through walls": delete the edge
+  that cuts through a wall, add junctions that trace the real hallway, connect them.
+- **+ Restroom** — click anywhere to drop a restroom pin. Rename it via the
+  inspector (e.g. "near 245").
+
+**Saving:** while `npm run dev` is running, **Save \<Floor\>** writes straight back
+into `src/data/floors/*.json` (a small Vite dev-only middleware in `vite.config.ts`
+handles this — it does nothing in a production build). If the dev server isn't
+reachable it falls back to downloading the JSON file, which you'd manually swap in.
+Either way, changes only affect the floor you're currently viewing and editing —
+save each floor separately.
+
+Panning is disabled while editing (so clicks/drags manipulate the graph, not the
+map) — scroll to zoom still works.
 
 ## Running it
 
@@ -27,38 +69,34 @@ npm install
 npm run dev
 ```
 
-Then open the printed localhost URL. `npm run build` produces a static `dist/`
-folder you can host anywhere (Vercel, Netlify, GitHub Pages, or the school's own
-web space).
+Open the printed localhost URL. `npm run build` produces a static `dist/` you can
+host anywhere (Vercel, Netlify, GitHub Pages, the school's own web space) — the
+edit-mode *save-to-disk* button only works against `npm run dev`, not that build.
 
 ## Extending it
 
-**Add a floor (Lower/Upper Level):** same recipe as Main Level —
-1. Render that PDF page to a high-res PNG/JPG, drop it in `src/assets/`.
-2. Trace room + corridor-junction coordinates into a JSON file shaped like
-   `src/data/mainLevel.json` (an LLM reading cropped close-ups of the scan is what
-   actually produced the Main Level one — tedious by hand, but doable).
-3. Wire up the floor switcher in `App.tsx` (currently stubbed — Lower/Upper buttons
-   are disabled placeholders) to swap the background image + data + graph.
-4. Add stairwell/elevator nodes that connect matching hallway junctions *between*
-   floor graphs, so a route can span floors.
+**Add real stair/elevator locations:** see "The staircase problem" above.
 
-**Roadmap discussed with Saahir (2026-09-03):**
-- Photo walkthroughs along a route (imagery of hallways, not just lines)
-- Live/reported hallway traffic between passing periods
-- Class name / teacher search (so you can search "AP Bio" instead of a room number)
-- Possibly a login (for security) — deliberately out of scope for now
-- Possible monetization: paid advertising placements on the map — worth thinking
-  through with the school before building, since it's their building and their
-  students seeing it.
+**Class name / teacher search:** not built yet (deliberately deferred). Would mean
+attaching a schedule/roster data source to rooms — bring the data and I'll wire it up.
+
+**Photo walkthroughs, live traffic, monetization:** all discussed as later ideas,
+not started. Worth a conversation with the school before building the ad piece —
+see chat history.
 
 ## Project structure
 
 ```
 src/
-  App.tsx           — the whole UI: sidebar, search, map, routing
+  App.tsx                — sidebar, search, routing UI, edit-mode UI, floor switcher
   App.css
-  lib/pathfind.ts    — Dijkstra over the hallway graph
-  data/mainLevel.json — rooms, landmarks, corridor nodes, edges (Main Level only)
-  assets/main-level.jpg — the traced background image
+  types.ts               — FloorData / FloorPoint / FloorEdge / StairLink shapes
+  components/MapCanvas.tsx — background image + SVG overlay; also the edit-mode
+                              pointer/drag/click handling
+  lib/pathfind.ts         — multi-floor Dijkstra (virtual start/end node trick)
+  lib/save.ts             — save-to-disk (dev) + download-JSON (always) helpers
+  data/floors.ts          — wires up the three floors' JSON + images
+  data/floors/{lower,main,upper}.json — the actual graphs
+  data/floors/stairs.json — cross-floor connectors (see "The staircase problem")
+  assets/{lower,main,upper}-level.jpg — traced background images
 ```
