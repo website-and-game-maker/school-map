@@ -715,8 +715,7 @@ button { font-family: inherit; }
   z-index: 30;
   display: flex;
   flex-direction: column;
-  background: rgba(250, 248, 246, 0.97);
-  backdrop-filter: blur(2px);
+  background: var(--paper);
 }
 
 .tour-bar {
@@ -765,7 +764,11 @@ button { font-family: inherit; }
 }
 
 .tour-body { flex: 1; overflow: hidden; }
-.tour-tp, .tour-tp-content { width: 100%; height: 100%; }
+/* The wrapper fills the pane; the content must size to the image, or a
+   2400px scan gets clamped to the pane width and centring has nothing to
+   centre. */
+.tour-tp { width: 100%; height: 100%; }
+.tour-tp-content { display: block; }
 .tour-body img { display: block; max-width: none; }
 
 .tour-note {

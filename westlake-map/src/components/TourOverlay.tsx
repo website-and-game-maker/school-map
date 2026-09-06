@@ -44,8 +44,25 @@ export default function TourOverlay({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="tour-body">
-        <TransformWrapper initialScale={1} minScale={0.5} maxScale={6} limitToBounds={false}>
-          <TransformComponent wrapperClass="tour-tp" contentClass="tour-tp-content">
+        <TransformWrapper
+            // The scans are 2400px wide, so open zoomed out far enough to see the
+            // whole sheet — the point of this layer is the shape of a day, not a
+            // single corridor. minScale has to go below fit-width or the initial
+            // view is clamped back in.
+            initialScale={0.28}
+            minScale={0.12}
+            maxScale={8}
+            centerOnInit
+            limitToBounds={false}
+          >
+          <TransformComponent
+            wrapperClass="tour-tp"
+            contentClass="tour-tp-content"
+            // The wrapper otherwise sizes itself to the image's natural 2400px,
+            // and centerOnInit then centres within *that*, parking the sheet off
+            // the side of a much narrower pane.
+            wrapperStyle={{ width: "100%", height: "100%" }}
+          >
             <img
               src={page === "map" ? tourMap : tourMapRoutes}
               alt={
