@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "westlake-map",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "westlake-map", "run", "dev"],
+      "autoPort": true
+    }
+  ]
+}
