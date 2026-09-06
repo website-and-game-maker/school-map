@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from "react-zoom-pan-pinch";
 import MapCanvas, { type EditTool } from "./components/MapCanvas";
+// three.js is ~1.2 MB of the bundle, and most visits never open the 3D view.
+// Loading it on demand keeps the 2D map — the thing a lost freshman needs in
+// the next ten seconds — fast on school wifi.
+const MapCanvas3D = lazy(() => import("./components/MapCanvas3D"));
 import SearchBox from "./components/SearchBox";
 import { FLOOR_IMAGES, FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
 import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
@@ -22,6 +26,10 @@ export default function App() {
   const stairs = useMemo(() => [...markedStairs, ...INITIAL_STAIRS], [markedStairs]);
   const markCount = useMemo(() => stairMarks(floors).length, [floors]);
   const [floorId, setFloorId] = useState<FloorId>("main");
+  // The 3D view is a second renderer of the state the 2D view already
+  // computes — not a second feature. "All" only means something in 3D.
+  const [view, setView] = useState<"2d" | "3d">("2d");
+  const [showAllFloors, setShowAllFloors] = useState(true);
 
   const [fromQuery, setFromQuery] = useState("Entrance C");
   const [toQuery, setToQuery] = useState("");
@@ -168,9 +176,10 @@ export default function App() {
   }, [routeResult]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (view !== "2d") return; // in 3D the viewer owns the camera
     frameLeg(legs[segIndex] ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segIndex, legs]);
+  }, [segIndex, legs, view]);
 
   function goToSegment(i: number) {
     const seg = segments[i];
@@ -194,7 +203,7 @@ export default function App() {
       setSegIndex(step.legIndex);
       setFloorId(step.floor);
     }
-    if (step.at) {
+    if (step.at && view === "2d") {
       const [x, y] = step.at;
       frameOn({ minX: x - 320, maxX: x + 320, minY: y - 320, maxY: y + 320 });
     }
@@ -294,6 +303,27 @@ export default function App() {
           <h1>Westlake Map</h1>
           <p className="subtitle">Find your way. Home of the Chaps.</p>
         </div>
+      </div>
+
+      {/* A view mode for the whole app, so it sits above the search fields.
+          White thumb, not the maroon fill: maroon in this app means "the
+          subject you selected" — a floor, a leg — and a view mode isn't one. */}
+      <div className="view-toggle">
+        <button
+          className={view === "2d" ? "active" : ""}
+          onClick={() => setView("2d")}
+        >
+          2D Plan
+        </button>
+        <button
+          className={view === "3d" ? "active" : ""}
+          onClick={() => {
+            setEditMode(false);
+            setView("3d");
+          }}
+        >
+          3D View
+        </button>
       </div>
 
       {!editMode && (
@@ -432,11 +462,22 @@ export default function App() {
       <div className="field">
         <label>Floor</label>
         <div className="floor-tabs">
+          {view === "3d" && (
+            <button
+              className={`floor-tab${showAllFloors ? " active" : ""}`}
+              onClick={() => setShowAllFloors(true)}
+            >
+              All
+            </button>
+          )}
           {FLOOR_ORDER.map((f) => (
             <button
               key={f}
-              className={`floor-tab${floorId === f ? " active" : ""}`}
-              onClick={() => switchFloor(f)}
+              className={`floor-tab${floorId === f && !(view === "3d" && showAllFloors) ? " active" : ""}`}
+              onClick={() => {
+                setShowAllFloors(false);
+                switchFloor(f);
+              }}
             >
               {FLOOR_LABELS[f].replace(" Level", "")}
               {segments.some((s) => s.floor === f) && <span className="route-dot" />}
@@ -445,6 +486,7 @@ export default function App() {
         </div>
       </div>
 
+      {view === "2d" && (
       <div className="field edit-toggle-row">
         <button
           className={`edit-toggle${editMode ? " on" : ""}`}
@@ -457,6 +499,7 @@ export default function App() {
           {editMode ? "Done editing" : "✎ Edit this floor"}
         </button>
       </div>
+      )}
 
       {editMode && (
         <div className="edit-panel">
@@ -548,7 +591,8 @@ export default function App() {
 
   return (
     <div className={`app${editMode ? " editing" : ""}`}>
-      <main className="map-area" ref={mapAreaRef}>
+      <main className={`map-area${view === "3d" ? " map-area-3d" : ""}`} ref={mapAreaRef}>
+        {view === "2d" ? (
         <TransformWrapper
           ref={transformRef}
           initialScale={0.35}
@@ -589,9 +633,25 @@ export default function App() {
             />
           </TransformComponent>
         </TransformWrapper>
+        ) : (
+          <Suspense fallback={<div className="map-3d-loading">Building the model…</div>}>
+          <MapCanvas3D
+            floors={floors}
+            stairs={stairs}
+            activeFloor={floorId}
+            showAllFloors={showAllFloors}
+            route={routeResult}
+            routeKey={`${fromItem?.kind ?? ""}:${fromItem?.floor ?? ""}:${fromItem?.id ?? ""}|${toItem?.kind ?? ""}:${toItem?.floor ?? ""}:${toItem?.id ?? ""}|${legs.length}`}
+            directions={directions}
+            activeStep={activeStep}
+            onPickFloor={switchFloor}
+            onFatal={() => setView("2d")}
+          />
+          </Suspense>
+        )}
 
         <div className="map-badge">
-          {FLOOR_LABELS[floorId]}
+          {view === "3d" && showAllFloors ? "All Levels" : FLOOR_LABELS[floorId]}
           {destLabel && !editMode && <span className="map-badge-dest">→ {destLabel}</span>}
         </div>
       </main>

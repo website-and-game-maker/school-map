@@ -1,0 +1,26 @@
+{
+  "main": {
+    "floor": "main",
+    "scale": 1.0,
+    "rotationDeg": 0,
+    "tx": 0,
+    "ty": 0,
+    "verified": true
+  },
+  "lower": {
+    "floor": "lower",
+    "scale": 1.356,
+    "rotationDeg": 0,
+    "tx": -819.0,
+    "ty": -550.0,
+    "verified": false
+  },
+  "upper": {
+    "floor": "upper",
+    "scale": 1.0314,
+    "rotationDeg": 0,
+    "tx": -577.0,
+    "ty": -265.0,
+    "verified": false
+  }
+}

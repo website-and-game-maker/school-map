@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/three": "^0.185.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-zoom-pan-pinch": "^4.1.1"
+    "react-zoom-pan-pinch": "^4.1.1",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

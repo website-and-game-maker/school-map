@@ -44,4 +44,7 @@ function saveFloorDataPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), saveFloorDataPlugin()],
+  // Honour PORT so a supervising tool can assign one; falls back to Vite's
+  // default when run by hand.
+  server: { port: Number(process.env.PORT) || 5173 },
 });

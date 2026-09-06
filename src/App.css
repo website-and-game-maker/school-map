@@ -636,3 +636,60 @@ button { font-family: inherit; }
 /* stair markers placed in Edit mode */
 .poi.stairs rect { fill: #b8860b; stroke: #fff; stroke-width: 3; }
 .poi.stairs path { fill: none; stroke: #fff; stroke-width: 4; stroke-linecap: square; }
+
+/* ---------------- 3D view ------------------------------------------------ */
+
+/* The backdrop is a CSS gradient, not a sky sphere: resolution-independent,
+   zero shader cost, and no banding across a near-flat gradient. */
+.map-area-3d {
+  background: radial-gradient(120% 90% at 50% 32%, #f4f1ec 0%, #ebe5dd 48%, #dbd4ca 100%);
+}
+
+.map-3d {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.map-3d canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.view-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  margin: 0 0 16px;
+  border-radius: 10px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+
+.view-toggle button {
+  padding: 7px 0;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.view-toggle button.active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(28, 21, 18, 0.12);
+}
+
+.map-3d-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
