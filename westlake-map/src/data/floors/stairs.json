@@ -1,0 +1,56 @@
+[
+ {
+  "id": "stairs-a-lower-main",
+  "kind": "stairs",
+  "verified": false,
+  "points": {
+   "lower": "Entrance A",
+   "main": "Entrance A"
+  }
+ },
+ {
+  "id": "stairs-a-main-upper",
+  "kind": "stairs",
+  "verified": false,
+  "points": {
+   "main": "Entrance A",
+   "upper": "Entrance A"
+  }
+ },
+ {
+  "id": "stairs-c-lower-main",
+  "kind": "stairs",
+  "verified": false,
+  "points": {
+   "lower": "Entrance C",
+   "main": "Entrance C"
+  }
+ },
+ {
+  "id": "stairs-c-main-upper",
+  "kind": "stairs",
+  "verified": false,
+  "points": {
+   "main": "Entrance C",
+   "upper": "Entrance C"
+  }
+ },
+ {
+  "id": "stairs-b-lower-upper",
+  "kind": "stairs",
+  "verified": false,
+  "points": {
+   "lower": "Entrance B",
+   "upper": "Entrance B"
+  }
+ },
+ {
+  "id": "stairs-d-lower-main",
+  "kind": "stairs",
+  "verified": false,
+  "points": {
+   "lower": "Entrance D",
+   "main": "Entrance D"
+  }
+ }
+]

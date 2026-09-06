@@ -1,0 +1,698 @@
+{
+ "id": "lower",
+ "label": "Lower Level",
+ "image": {
+  "w": 3039,
+  "h": 2448
+ },
+ "points": {
+  "150": {
+   "x": 1787.3,
+   "y": 1251.4,
+   "kind": "room"
+  },
+  "149B": {
+   "x": 1910.7,
+   "y": 1251.4,
+   "kind": "room"
+  },
+  "149": {
+   "x": 1910.7,
+   "y": 1289.6,
+   "kind": "room"
+  },
+  "147": {
+   "x": 1998.8,
+   "y": 1276.8,
+   "kind": "room"
+  },
+  "145": {
+   "x": 2051.7,
+   "y": 1251.4,
+   "kind": "room"
+  },
+  "143": {
+   "x": 2122.2,
+   "y": 1264.1,
+   "kind": "room"
+  },
+  "141": {
+   "x": 2245.7,
+   "y": 1264.1,
+   "kind": "room"
+  },
+  "101": {
+   "x": 2369.1,
+   "y": 1225.9,
+   "kind": "room"
+  },
+  "100C": {
+   "x": 2668.8,
+   "y": 1289.6,
+   "kind": "room"
+  },
+  "152": {
+   "x": 1787.3,
+   "y": 1378.7,
+   "kind": "room"
+  },
+  "154": {
+   "x": 1787.3,
+   "y": 1429.6,
+   "kind": "room"
+  },
+  "156": {
+   "x": 1787.3,
+   "y": 1467.8,
+   "kind": "room"
+  },
+  "148": {
+   "x": 1910.7,
+   "y": 1353.2,
+   "kind": "room"
+  },
+  "146": {
+   "x": 1998.8,
+   "y": 1353.2,
+   "kind": "room"
+  },
+  "146B": {
+   "x": 2034.1,
+   "y": 1366.0,
+   "kind": "room"
+  },
+  "131": {
+   "x": 2016.5,
+   "y": 1429.6,
+   "kind": "room"
+  },
+  "129": {
+   "x": 2016.5,
+   "y": 1467.8,
+   "kind": "room"
+  },
+  "127": {
+   "x": 2016.5,
+   "y": 1518.7,
+   "kind": "room"
+  },
+  "144": {
+   "x": 2157.5,
+   "y": 1378.7,
+   "kind": "room"
+  },
+  "142": {
+   "x": 2210.4,
+   "y": 1378.7,
+   "kind": "room"
+  },
+  "140": {
+   "x": 2263.3,
+   "y": 1378.7,
+   "kind": "room"
+  },
+  "126": {
+   "x": 2122.2,
+   "y": 1429.6,
+   "kind": "room"
+  },
+  "124": {
+   "x": 2122.2,
+   "y": 1480.5,
+   "kind": "room"
+  },
+  "172": {
+   "x": 1540.5,
+   "y": 1569.6,
+   "kind": "room"
+  },
+  "170": {
+   "x": 1593.3,
+   "y": 1569.6,
+   "kind": "room"
+  },
+  "168": {
+   "x": 1663.9,
+   "y": 1569.6,
+   "kind": "room"
+  },
+  "175": {
+   "x": 1487.6,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "173": {
+   "x": 1540.5,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "171": {
+   "x": 1593.3,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "169": {
+   "x": 1646.2,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "167": {
+   "x": 1699.1,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "165": {
+   "x": 1752.0,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "163": {
+   "x": 1804.9,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "161": {
+   "x": 1857.8,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "157": {
+   "x": 1893.0,
+   "y": 1595.1,
+   "kind": "room"
+  },
+  "160": {
+   "x": 1945.9,
+   "y": 1595.1,
+   "kind": "room"
+  },
+  "125": {
+   "x": 2016.5,
+   "y": 1607.8,
+   "kind": "room"
+  },
+  "122": {
+   "x": 2104.6,
+   "y": 1569.6,
+   "kind": "room"
+  },
+  "120": {
+   "x": 2157.5,
+   "y": 1620.5,
+   "kind": "room"
+  },
+  "123": {
+   "x": 2051.7,
+   "y": 1658.7,
+   "kind": "room"
+  },
+  "103": {
+   "x": 2333.8,
+   "y": 1480.5,
+   "kind": "room"
+  },
+  "111": {
+   "x": 2280.9,
+   "y": 1938.8,
+   "kind": "room"
+  },
+  "114": {
+   "x": 2421.9,
+   "y": 1913.3,
+   "kind": "room"
+  },
+  "118": {
+   "x": 2404.3,
+   "y": 1977.0,
+   "kind": "room"
+  },
+  "115": {
+   "x": 2333.8,
+   "y": 1964.3,
+   "kind": "room"
+  },
+  "Fieldhouse Gym": {
+   "x": 601.6,
+   "y": 709.5,
+   "kind": "landmark",
+   "label": "Fieldhouse Gym"
+  },
+  "Varsity Athletics": {
+   "x": 868.9,
+   "y": 737.9,
+   "kind": "landmark",
+   "label": "Varsity Athletics"
+  },
+  "Entrance B": {
+   "x": 401.0,
+   "y": 894.0,
+   "kind": "entrance",
+   "label": "Entrance B"
+  },
+  "Entrance C": {
+   "x": 1119.6,
+   "y": 894.0,
+   "kind": "entrance",
+   "label": "Entrance C"
+  },
+  "Chap Court": {
+   "x": 1086.2,
+   "y": 1021.7,
+   "kind": "landmark",
+   "label": "Chap Court"
+  },
+  "Counseling": {
+   "x": 1219.8,
+   "y": 1177.8,
+   "kind": "landmark",
+   "label": "Counseling"
+  },
+  "Choir Room": {
+   "x": 802.1,
+   "y": 1121.0,
+   "kind": "landmark",
+   "label": "Choir Room"
+  },
+  "Performing Arts Center": {
+   "x": 501.3,
+   "y": 1206.1,
+   "kind": "landmark",
+   "label": "Performing Arts Center"
+  },
+  "Administration": {
+   "x": 1136.3,
+   "y": 1319.7,
+   "kind": "landmark",
+   "label": "Administration"
+  },
+  "Band Hall": {
+   "x": 685.1,
+   "y": 1366.0,
+   "kind": "landmark",
+   "label": "Band Hall"
+  },
+  "Commons": {
+   "x": 1320.1,
+   "y": 1353.2,
+   "kind": "landmark",
+   "label": "Commons"
+  },
+  "Entrance A": {
+   "x": 1186.4,
+   "y": 1506.0,
+   "kind": "entrance",
+   "label": "Entrance A"
+  },
+  "Chaparral Stadium": {
+   "x": 1787.3,
+   "y": 454.1,
+   "kind": "landmark",
+   "label": "Chaparral Stadium"
+  },
+  "Baseball Field": {
+   "x": 2386.7,
+   "y": 1064.2,
+   "kind": "landmark",
+   "label": "Baseball Field"
+  },
+  "Visual Arts": {
+   "x": 1681.5,
+   "y": 1177.8,
+   "kind": "landmark",
+   "label": "Visual Arts"
+  },
+  "Practice Gym": {
+   "x": 1840.2,
+   "y": 1177.8,
+   "kind": "landmark",
+   "label": "Practice Gym"
+  },
+  "Kitchen": {
+   "x": 2527.7,
+   "y": 1289.6,
+   "kind": "landmark",
+   "label": "Kitchen"
+  },
+  "Cafeteria": {
+   "x": 2545.4,
+   "y": 1366.0,
+   "kind": "landmark",
+   "label": "Cafeteria"
+  },
+  "Research Center": {
+   "x": 1663.9,
+   "y": 1366.0,
+   "kind": "landmark",
+   "label": "Research Center"
+  },
+  "Courtyard": {
+   "x": 1910.7,
+   "y": 1429.6,
+   "kind": "landmark",
+   "label": "Courtyard"
+  },
+  "Sub-Varsity Gym": {
+   "x": 2386.7,
+   "y": 1633.3,
+   "kind": "landmark",
+   "label": "Sub-Varsity Gym"
+  },
+  "Entrance D": {
+   "x": 2157.5,
+   "y": 1773.3,
+   "kind": "entrance",
+   "label": "Entrance D"
+  },
+  "Black Box Theater": {
+   "x": 2298.5,
+   "y": 1849.7,
+   "kind": "landmark",
+   "label": "Black Box Theater"
+  },
+  "South Complex": {
+   "x": 1981.2,
+   "y": 1849.7,
+   "kind": "landmark",
+   "label": "South Complex"
+  },
+  "Learning Center": {
+   "x": 2051.7,
+   "y": 1964.3,
+   "kind": "landmark",
+   "label": "Learning Center"
+  },
+  "AEP": {
+   "x": 1875.4,
+   "y": 2002.5,
+   "kind": "landmark",
+   "label": "AEP"
+  },
+  "Practice Field 3": {
+   "x": 1945.9,
+   "y": 2053.4,
+   "kind": "landmark",
+   "label": "Practice Field 3"
+  },
+  "Practice Fields 1 & 2": {
+   "x": 2809.8,
+   "y": 1938.8,
+   "kind": "landmark",
+   "label": "Practice Fields 1 & 2"
+  },
+  "J_CHAPCOURT": {
+   "x": 1069.4,
+   "y": 1064.2,
+   "kind": "junction"
+  },
+  "J_ADMIN": {
+   "x": 1186.4,
+   "y": 1277.1,
+   "kind": "junction"
+  },
+  "J_150": {
+   "x": 1840.2,
+   "y": 1327.8,
+   "kind": "junction"
+  },
+  "J_146": {
+   "x": 1981.2,
+   "y": 1404.1,
+   "kind": "junction"
+  },
+  "J_124": {
+   "x": 2139.9,
+   "y": 1455.1,
+   "kind": "junction"
+  },
+  "J_CAF": {
+   "x": 2474.8,
+   "y": 1327.8,
+   "kind": "junction"
+  },
+  "J_172": {
+   "x": 1611.0,
+   "y": 1607.8,
+   "kind": "junction"
+  },
+  "J_161": {
+   "x": 1769.6,
+   "y": 1684.2,
+   "kind": "junction"
+  },
+  "J_120": {
+   "x": 2122.2,
+   "y": 1633.3,
+   "kind": "junction"
+  },
+  "J_ENTD": {
+   "x": 2192.8,
+   "y": 1760.6,
+   "kind": "junction"
+  }
+ },
+ "edges": [
+  {
+   "a": "Entrance B",
+   "b": "J_CHAPCOURT"
+  },
+  {
+   "a": "Entrance C",
+   "b": "J_CHAPCOURT"
+  },
+  {
+   "a": "J_CHAPCOURT",
+   "b": "J_ADMIN"
+  },
+  {
+   "a": "J_ADMIN",
+   "b": "Entrance A"
+  },
+  {
+   "a": "Entrance A",
+   "b": "J_172"
+  },
+  {
+   "a": "J_172",
+   "b": "J_161"
+  },
+  {
+   "a": "J_172",
+   "b": "J_146"
+  },
+  {
+   "a": "J_146",
+   "b": "J_150"
+  },
+  {
+   "a": "J_146",
+   "b": "J_124"
+  },
+  {
+   "a": "J_124",
+   "b": "J_CAF"
+  },
+  {
+   "a": "J_124",
+   "b": "J_120"
+  },
+  {
+   "a": "J_120",
+   "b": "J_ENTD"
+  },
+  {
+   "a": "J_161",
+   "b": "J_120"
+  },
+  {
+   "a": "Entrance D",
+   "b": "J_ENTD"
+  },
+  {
+   "a": "J_150",
+   "b": "150"
+  },
+  {
+   "a": "J_150",
+   "b": "149B"
+  },
+  {
+   "a": "J_150",
+   "b": "149"
+  },
+  {
+   "a": "J_146",
+   "b": "147"
+  },
+  {
+   "a": "J_146",
+   "b": "145"
+  },
+  {
+   "a": "J_124",
+   "b": "143"
+  },
+  {
+   "a": "J_124",
+   "b": "141"
+  },
+  {
+   "a": "J_CAF",
+   "b": "101"
+  },
+  {
+   "a": "J_CAF",
+   "b": "100C"
+  },
+  {
+   "a": "J_150",
+   "b": "152"
+  },
+  {
+   "a": "J_150",
+   "b": "154"
+  },
+  {
+   "a": "J_150",
+   "b": "156"
+  },
+  {
+   "a": "J_150",
+   "b": "148"
+  },
+  {
+   "a": "J_146",
+   "b": "146"
+  },
+  {
+   "a": "J_146",
+   "b": "146B"
+  },
+  {
+   "a": "J_146",
+   "b": "131"
+  },
+  {
+   "a": "J_146",
+   "b": "129"
+  },
+  {
+   "a": "J_146",
+   "b": "127"
+  },
+  {
+   "a": "J_124",
+   "b": "144"
+  },
+  {
+   "a": "J_124",
+   "b": "142"
+  },
+  {
+   "a": "J_124",
+   "b": "140"
+  },
+  {
+   "a": "J_124",
+   "b": "126"
+  },
+  {
+   "a": "J_124",
+   "b": "124"
+  },
+  {
+   "a": "J_172",
+   "b": "172"
+  },
+  {
+   "a": "J_172",
+   "b": "170"
+  },
+  {
+   "a": "J_172",
+   "b": "168"
+  },
+  {
+   "a": "J_172",
+   "b": "175"
+  },
+  {
+   "a": "J_172",
+   "b": "173"
+  },
+  {
+   "a": "J_172",
+   "b": "171"
+  },
+  {
+   "a": "J_172",
+   "b": "169"
+  },
+  {
+   "a": "J_161",
+   "b": "167"
+  },
+  {
+   "a": "J_161",
+   "b": "165"
+  },
+  {
+   "a": "J_161",
+   "b": "163"
+  },
+  {
+   "a": "J_161",
+   "b": "161"
+  },
+  {
+   "a": "J_161",
+   "b": "157"
+  },
+  {
+   "a": "J_120",
+   "b": "160"
+  },
+  {
+   "a": "J_120",
+   "b": "125"
+  },
+  {
+   "a": "J_120",
+   "b": "122"
+  },
+  {
+   "a": "J_120",
+   "b": "120"
+  },
+  {
+   "a": "J_120",
+   "b": "123"
+  },
+  {
+   "a": "J_124",
+   "b": "103"
+  },
+  {
+   "a": "J_ENTD",
+   "b": "111"
+  },
+  {
+   "a": "J_ENTD",
+   "b": "114"
+  },
+  {
+   "a": "J_ENTD",
+   "b": "118"
+  },
+  {
+   "a": "J_ENTD",
+   "b": "115"
+  }
+ ],
+ "entrances": [
+  "Entrance B",
+  "Entrance C",
+  "Entrance A",
+  "Entrance D"
+ ],
+ "pois": []
+}
