@@ -693,3 +693,86 @@ button { font-family: inherit; }
   font-size: 13px;
   color: var(--muted);
 }
+
+/* ---------------- tour map overlay --------------------------------------- */
+
+.tour-btn {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tour-btn:hover { background: var(--paper); }
+
+.tour-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: rgba(250, 248, 246, 0.97);
+  backdrop-filter: blur(2px);
+}
+
+.tour-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.tour-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+.tour-tabs button {
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tour-tabs button.active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(28, 21, 18, 0.12);
+}
+
+.tour-close {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tour-body { flex: 1; overflow: hidden; }
+.tour-tp, .tour-tp-content { width: 100%; height: 100%; }
+.tour-body img { display: block; max-width: none; }
+
+.tour-note {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: #fff;
+  border-top: 1px solid var(--line);
+}

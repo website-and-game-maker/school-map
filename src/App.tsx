@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from "react-zoom-pan-pinch";
 import MapCanvas, { type EditTool } from "./components/MapCanvas";
+import TourOverlay from "./components/TourOverlay";
 // three.js is ~1.2 MB of the bundle, and most visits never open the 3D view.
 // Loading it on demand keeps the 2D map — the thing a lost freshman needs in
 // the next ten seconds — fast on school wifi.
@@ -30,6 +31,7 @@ export default function App() {
   // computes — not a second feature. "All" only means something in 3D.
   const [view, setView] = useState<"2d" | "3d">("2d");
   const [showAllFloors, setShowAllFloors] = useState(true);
+  const [tourOpen, setTourOpen] = useState(false);
 
   const [fromQuery, setFromQuery] = useState("Entrance C");
   const [toQuery, setToQuery] = useState("");
@@ -486,6 +488,12 @@ export default function App() {
         </div>
       </div>
 
+      <div className="field">
+        <button className="tour-btn" onClick={() => setTourOpen(true)}>
+          🗺 Tour map &amp; a real day's routes
+        </button>
+      </div>
+
       {view === "2d" && (
       <div className="field edit-toggle-row">
         <button
@@ -649,6 +657,8 @@ export default function App() {
           />
           </Suspense>
         )}
+
+        {tourOpen && <TourOverlay onClose={() => setTourOpen(false)} />}
 
         <div className="map-badge">
           {view === "3d" && showAllFloors ? "All Levels" : FLOOR_LABELS[floorId]}
