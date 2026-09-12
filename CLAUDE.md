@@ -66,24 +66,46 @@ it before changing the extraction.
 
 Nearest in line, in order:
 
-1. **Wall-extraction noise.** Landscaping symbols in the courtyards and plumbing
-   fixtures in small rooms survive the filter in `tools/export_walls.py` and get
-   extruded as full-height walls, which reads as glitchy debris in 3D. A size or
-   thickness filter alone does not separate them — 25% of real wall pixels are as
-   thin as the artefacts, and the biggest connected components already contain
-   them. This is the top open bug.
-2. **"All Levels" readability.** With three storeys 40 ft apart, one floor's walls
-   sit over another floor's paper and you see 2xx and 3xx room numbers on what
-   looks like one surface. Either separate the trays much further or stop
-   texturing the storeys that are not in focus.
-3. **Fly-the-route camera and 3D labels** — both designed, neither built.
-4. **Finish the storey alignment** with a dev-only overlay that nudges
+1. **Fly-the-route camera and 3D labels** — both designed in detail, neither
+   built. The camera is specified as a low drone at ~22 ft, not a first-person
+   walk: at eye height you see nothing but wall and lose the room numbers on the
+   floor, which are the whole advantage.
+2. **Finish the storey alignment** with a dev-only overlay that nudges
    `align3d.json` by hand. Ten minutes of a human's time closes the biggest
    accuracy gap in the 3D view.
-5. **Schedule-based routing.** Enter your class periods once and get the day's
+3. **Schedule-based routing.** Enter your class periods once and get the day's
    transitions. Page 2 of the tour map is exactly this, hand-drawn by a student,
    which is good evidence it is the feature that would make people who already
    know the building open the app.
+4. **Mobile route framing.** The 2D view aims a route at the strip of map the
+   bottom sheet leaves visible; the 3D view centres on the whole canvas, so on a
+   phone the lower part of a route can sit behind the sheet. The fix is to pass
+   the sheet height into the viewer and use `camera.setViewOffset`.
+
+Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
+
+- **Wall-extraction noise** (trees, shrubs, plumbing fixtures extruded as
+  walls). Separating them by component *size*, by *thickness*, or by proximity to
+  the straight-line skeleton all fail — see the commit message on the fix for the
+  measurements. What works is a per-component *shape* test applied before the
+  heal, while the artefacts are still free-floating.
+- **"All Levels" layering.** Fixed by raising the storey spread to 110 ft.
+
+## Deployment
+
+Pushing to `main` builds and publishes to GitHub Pages automatically, via
+`.github/workflows/deploy.yml`. Live at:
+
+  https://website-and-game-maker.github.io/school-map/
+
+The site is a *project* page served from `/school-map/`, so the build needs that
+as its base path. The workflow passes it as `VITE_BASE`, derived from the repo
+name — `vite.config.ts` defaults to `/` so local dev and any other host still
+work. If you rename the repo, the base follows automatically.
+
+The repository is **public**, which is what GitHub Pages requires on a free
+account, so the floor plans are publicly readable. Making it private disables the
+site unless the account has Pages for private repos.
 
 ## Repository layout
 
