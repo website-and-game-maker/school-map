@@ -73,6 +73,15 @@ HEAL = 9                 # closing kernel that reconnects walls the opening tore
 MIN_BLOB_PX = 600        # a surviving piece must have this area ...
 MIN_BLOB_DIM = 45        # ... or this bbox extent, else it is leftover lettering
 NET_LINK = 22            # px gap bridged when grouping walls into one building
+# Free-floating blobs: trees and shrubs in the courtyards, plumbing fixtures in
+# the small rooms. They pass the line opening (a shrub outline contains straight
+# runs) and they survive a size filter (some are large), so they are caught by
+# SHAPE instead -- compact, roughly as tall as wide, and solidly filled, which no
+# run of wall ever is. Only components that touch nothing else are eligible, so a
+# real wall can never qualify: it is attached to the rest of the building.
+BLOB_AREA = 6000         # px; bigger free-floating things are kept
+BLOB_ELONG = 3.0         # max bbox aspect ratio to count as a blob
+BLOB_FILL = 0.18         # min area / bbox area; wall runs come in far below this
 
 # --- stage 5: rectangle decomposition ----------------------------------------
 QUANT = 2                # plan px per rectangle cell (2 keeps walls near true width)
@@ -244,6 +253,36 @@ def keep_networks(walls, pts, min_share=0.06):
     return walls & np.isin(lab, keep)
 
 
+def drop_blobs(mask, verbose=False):
+    """Remove free-floating compact blobs -- furniture, fixtures, planting.
+
+    Run this BEFORE the heal. The closing that reconnects torn walls also welds
+    a nearby shrub onto the wall next to it, and once welded it is part of the
+    building's one big component and no per-component test can see it any more.
+    """
+    lab, n = ndi.label(mask, structure=np.ones((3, 3)))
+    if n == 0:
+        return mask
+    sizes = ndi.sum(mask, lab, range(1, n + 1)).astype(int)
+    kill = []
+    for i, sl in enumerate(ndi.find_objects(lab)):
+        h = sl[0].stop - sl[0].start
+        w = sl[1].stop - sl[1].start
+        area = int(sizes[i])
+        elong = max(h, w) / max(1, min(h, w))
+        fill = area / max(1, h * w)
+        if elong < BLOB_ELONG and area < BLOB_AREA and fill > BLOB_FILL:
+            kill.append(i + 1)
+    if not kill:
+        return mask
+    out = mask & ~np.isin(lab, kill)
+    if verbose:
+        log(f'    dropped {len(kill)} free-floating blobs '
+            f'({int(mask.sum() - out.sum())} px, '
+            f'{100 * (mask.sum() - out.sum()) / max(1, mask.sum()):.1f}% of wall ink)')
+    return out
+
+
 def wall_mask(inside, lines, verbose=True):
     """Keep long straight ink; throw away text, symbols and hatching.
 
@@ -255,6 +294,7 @@ def wall_mask(inside, lines, verbose=True):
     lines = drop_small(lines, MIN_BLOB_PX // 3, MIN_BLOB_DIM)
     restored = ndi.binary_dilation(
         lines, np.ones((3, 3)), iterations=RESTORE_ITERS) & inside
+    restored = drop_blobs(restored, verbose)
     healed = ndi.binary_closing(restored, structure=np.ones((HEAL, HEAL))) & inside
     healed = drop_small(healed, MIN_BLOB_PX, MIN_BLOB_DIM)
     if verbose:

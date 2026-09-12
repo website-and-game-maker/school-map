@@ -44,6 +44,10 @@ function saveFloorDataPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), saveFloorDataPlugin()],
+  // GitHub Pages serves a project site from /<repo>/, not from the domain root,
+  // so every asset URL needs that prefix. Set by the deploy workflow; empty
+  // locally and for any other host, where the app sits at the root.
+  base: process.env.VITE_BASE || "/",
   // Honour PORT so a supervising tool can assign one; falls back to Vite's
   // default when run by hand.
   server: { port: Number(process.env.PORT) || 5173 },

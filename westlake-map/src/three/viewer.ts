@@ -348,8 +348,9 @@ export class MapViewer3D {
     if (!parts) return;
     // Only the storey the user is actually reading gets the high-resolution
     // page; three of those at once is enough VRAM to lose the context on a
-    // mid-range phone.
-    const focused = this.props.showAllFloors || this.props.activeFloor === floor;
+    // mid-range phone. "All" is emphatically not an excuse to promote all
+    // three — it is the mode most likely to be open on a phone.
+    const focused = this.props.activeFloor === floor;
     const size = focused ? TEX_FOCUS : TEX_GHOST;
     if (parts.texSize === size) return;
     const previous = parts.texSize;

@@ -49,7 +49,12 @@ export const GROUND_Y = -8;
 // function of how far above the horizon the camera is: orbit down and the
 // model collapses into a building, orbit up and it opens into a diagram.
 export const SPREAD_COMPACT = 16;
-export const SPREAD_EXPLODED = 40;
+// 40 ft was not enough. On a building 1200 ft across, three storeys that close
+// together read as one surface from any sensible camera angle: you see Main's
+// 2xx room numbers and Upper's 3xx numbers side by side and assume they are on
+// the same floor. At 110 ft the trays are unmistakably separate and it is still
+// only 9% of the building's width, so it never reads as a tower.
+export const SPREAD_EXPLODED = 110;
 
 const ELEV_LO = (8 * Math.PI) / 180;
 const ELEV_HI = (30 * Math.PI) / 180;

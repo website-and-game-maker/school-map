@@ -1,0 +1,68 @@
+# Build the app and publish it to GitHub Pages.
+#
+# The site is a *project* page, served from https://<user>.github.io/<repo>/,
+# so the build needs that path as its base or every asset 404s. VITE_BASE is
+# derived from the repository name rather than hard-coded, so renaming the repo
+# or forking it does not silently break the deploy.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: westlake-map
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: westlake-map/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.app.json
+
+      - name: Build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      # Pages serves 404.html for any unknown path. The app is a single page
+      # with no router today, but a copy costs nothing and means a deep link
+      # or a refresh lands on the app instead of a GitHub error page.
+      - name: Add SPA fallback
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: westlake-map/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

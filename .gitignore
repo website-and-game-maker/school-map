@@ -1,0 +1,5 @@
+.DS_Store
+**/.DS_Store
+
+# The old nested repo's .git, kept only until the flattened history is pushed.
+westlake-map-inner-git-backup/
