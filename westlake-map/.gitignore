@@ -26,3 +26,7 @@ dist-ssr
 # Python tooling
 __pycache__/
 *.pyc
+
+# The original scanned floor plans. The app is drawn from the vector data in
+# src/data/floors/ instead, so these are only needed to re-run tools/.
+private-source/

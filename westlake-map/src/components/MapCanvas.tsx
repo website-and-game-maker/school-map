@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState } from "react";
-import type { FloorData, FloorPoint } from "../types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FloorData, FloorId, FloorPoint } from "../types";
+import { renderFloorPlan } from "../lib/floorPlan";
 
 export type EditTool = "select" | "add-restroom" | "add-stairs";
 
 interface Props {
   floor: FloorData;
-  imageSrc: string;
   editMode: boolean;
   tool: EditTool;
   selectedId: string | null;
@@ -23,9 +23,32 @@ interface Props {
 const CLICK_MOVE_THRESHOLD = 4;
 const ARROW_SPACING = 260; // px between direction arrows along the route
 
+/**
+ * The floor itself, drawn from room/wall geometry rather than the scanned page.
+ * Rendered once per floor into a canvas and cached, because redrawing ~120
+ * polygons and 7k wall rects on every pan would be wasteful and pointless — the
+ * plan does not change.
+ */
+const plateCache = new Map<string, HTMLCanvasElement>();
+
+function FloorPlate({ floor, w, h }: { floor: FloorId; w: number; h: number }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let plate = plateCache.get(floor);
+    if (!plate) {
+      plate = renderFloorPlan(floor, { scale: 1, labels: true });
+      plateCache.set(floor, plate);
+    }
+    plate.className = "floor-plate";
+    host.replaceChildren(plate);
+  }, [floor]);
+  return <div ref={hostRef} className="floor-plate-host" style={{ width: w, height: h }} />;
+}
+
 export default function MapCanvas({
   floor,
-  imageSrc,
   editMode,
   tool,
   selectedId,
@@ -143,7 +166,7 @@ export default function MapCanvas({
 
   return (
     <div className="map-canvas" style={{ width: floor.image.w, height: floor.image.h }}>
-      <img src={imageSrc} alt={`Westlake High School — ${floor.label}`} draggable={false} />
+      <FloorPlate floor={floor.id} w={floor.image.w} h={floor.image.h} />
       <svg
         ref={svgRef}
         className={`overlay${editMode ? " editable" : ""}`}

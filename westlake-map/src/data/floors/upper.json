@@ -345,19 +345,19 @@
    "x": 243.7,
    "y": 993.3,
    "kind": "entrance",
-   "label": "Entrance B"
+   "label": "PAC Entrance (B)"
   },
   "Entrance C": {
    "x": 1218.7,
    "y": 922.4,
    "kind": "entrance",
-   "label": "Entrance C"
+   "label": "Chap Court Entrance (C)"
   },
   "Entrance A": {
    "x": 1149.1,
    "y": 1735.1,
    "kind": "entrance",
-   "label": "Entrance A"
+   "label": "Front Door (A)"
   },
   "Auditorium": {
    "x": 696.4,

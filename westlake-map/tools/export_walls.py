@@ -38,7 +38,11 @@ from PIL import Image
 from scipy import ndimage as ndi
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS = os.path.join(ROOT, 'src', 'assets')
+# The source scans deliberately do NOT live under src/: anything in there is
+# bundled and published. They sit in private-source/, which is gitignored, so
+# the pipeline can still be re-run locally while nothing derived from the page
+# pixels ever reaches the browser.
+ASSETS = os.path.join(ROOT, 'private-source')
 OUT_DIR = os.path.join(ROOT, 'src', 'data', 'floors')
 SCRATCH = ('/private/tmp/claude-501/-Users-saahir-Desktop-School-Map/'
            'c6960bd9-1f4d-4c5c-9470-39ee0824be17/scratchpad')

@@ -40,8 +40,6 @@ export interface Viewer3DProps {
   floors: Record<FloorId, FloorData>;
   stairs: StairLink[];
   activeFloor: FloorId;
-  /** "All" shows every storey at full detail; otherwise the others recede. */
-  showAllFloors: boolean;
   route: GridRoute | null;
   /** Cheap identity for the route — rebuilding its geometry is the costly bit. */
   routeKey: string;
@@ -63,6 +61,8 @@ interface FloorParts {
   ghostPlate: THREE.Mesh;
   ghostOutline: THREE.LineSegments;
   slabMaterial: THREE.MeshLambertMaterial;
+  /** Cloned per floor: the unfocused storeys need their own opacity. */
+  wallMaterials: THREE.MeshStandardMaterial[];
   owned: Array<{ dispose(): void }>;
   /** Which resolution this floor currently holds, so it can be handed back. */
   texSize: number | null;
@@ -279,7 +279,9 @@ export class MapViewer3D {
 
     const { geometry: wallGeom, stats } = buildWallGeometry(floor, p);
     owned.push(wallGeom);
-    const walls = new THREE.Mesh(wallGeom, [this.materials.wallCap, this.materials.wallSide]);
+    const wallMaterials = [this.materials.wallCap.clone(), this.materials.wallSide.clone()];
+    owned.push(...wallMaterials);
+    const walls = new THREE.Mesh(wallGeom, wallMaterials);
     walls.castShadow = !this.coarse;
     walls.receiveShadow = !this.coarse;
     group.add(walls);
@@ -335,6 +337,7 @@ export class MapViewer3D {
       ghostPlate,
       ghostOutline,
       slabMaterial,
+      wallMaterials,
       owned,
       texSize: null,
     };
@@ -371,31 +374,42 @@ export class MapViewer3D {
   // ------------------------------------------------------------ floor state
 
   private applyFloorStates(): void {
-    const { activeFloor, showAllFloors } = this.props;
-    const activeIdx = FLOOR_INDEX[activeFloor];
-    const routeFloors = new Set(this.props.route?.legs.map((l) => l.floor) ?? []);
+    const activeIdx = FLOOR_INDEX[this.props.activeFloor];
 
+    // Every storey is always on screen. Picking a floor changes *emphasis*, not
+    // visibility: this is a map of a three-storey building, and hiding two of
+    // them to look at one throws away the thing 3D was for. The unfocused
+    // storeys stay legible but recede, and go translucent so the focused floor
+    // is never hidden underneath one of them.
     for (const floor of FLOOR_ORDER) {
       const parts = this.floorParts.get(floor);
       if (!parts) continue;
-      const idx = FLOOR_INDEX[floor];
+      const focus = FLOOR_INDEX[floor] === activeIdx;
       parts.group.position.y = storeyY(floor, this.spread);
 
-      // A floor carrying a route leg is never fully ghosted — a route that
-      // vanishes when it climbs a staircase is a broken product.
-      const carriesRoute = routeFloors.has(floor);
-      const focus = showAllFloors || idx === activeIdx;
-      const below = !focus && idx < activeIdx;
-
-      parts.walls.visible = focus || (below && carriesRoute);
+      parts.walls.visible = true;
+      parts.slab.visible = true;
+      parts.skirt.visible = true;
       parts.edges.visible = focus;
-      parts.slab.visible = focus || below;
-      parts.skirt.visible = focus || below;
-      parts.ghostPlate.visible = !focus && !below;
-      parts.ghostOutline.visible = !focus && !below;
+      parts.ghostPlate.visible = false;
+      parts.ghostOutline.visible = false;
 
-      parts.slabMaterial.color.setHex(focus ? 0xffffff : 0xcbc4ba);
+      parts.slabMaterial.color.setHex(focus ? 0xffffff : 0xcfc9c0);
+      parts.slabMaterial.opacity = focus ? 1 : 0.42;
+      parts.slabMaterial.transparent = !focus;
+      parts.slabMaterial.depthWrite = focus;
+      parts.slabMaterial.needsUpdate = true;
+
+      for (const m of parts.wallMaterials) {
+        m.opacity = focus ? 1 : 0.3;
+        m.transparent = !focus;
+        m.depthWrite = focus;
+        m.needsUpdate = true;
+      }
+
       parts.walls.castShadow = !this.coarse && focus;
+      parts.walls.renderOrder = focus ? 0 : -1;
+      parts.slab.renderOrder = focus ? 0 : -1;
     }
   }
 
@@ -493,8 +507,7 @@ export class MapViewer3D {
     const prev = this.props;
     this.props = next;
 
-    const floorChanged =
-      prev.activeFloor !== next.activeFloor || prev.showAllFloors !== next.showAllFloors;
+    const floorChanged = prev.activeFloor !== next.activeFloor;
     if (floorChanged) {
       this.applyFloorStates();
       for (const f of FLOOR_ORDER) void this.loadFloorTexture(f);

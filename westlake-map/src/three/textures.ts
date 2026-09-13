@@ -12,7 +12,7 @@
 
 import * as THREE from "three";
 import type { FloorId } from "../types";
-import { FLOOR_IMAGES } from "../data/floors";
+import { renderFloorPlan, roomsOf } from "../lib/floorPlan";
 
 interface Entry {
   texture: THREE.Texture;
@@ -43,9 +43,12 @@ export class TextureCache {
     if (inflight) return inflight;
 
     const job = (async () => {
-      const src = FLOOR_IMAGES[floor];
-      const bitmap = tone(await decode(src, maxEdge));
-      const tex = new THREE.Texture(bitmap as unknown as HTMLImageElement);
+      // Drawn, not decoded. The plate is the school rendered from its own
+      // geometry, so the scan never reaches the browser.
+      const { w, h } = roomsOf(floor);
+      const scale = maxEdge / Math.max(w, h);
+      const canvas = renderFloorPlan(floor, { scale, labels: scale > 0.35 });
+      const tex = new THREE.Texture(canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.generateMipmaps = true;
       tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -76,75 +79,4 @@ export class TextureCache {
     this.entries.clear();
     this.pending.clear();
   }
-}
-
-/**
- * Lift the scan's blacks and pull its contrast back.
- *
- * The plans use dense hatching for double-height spaces and site features. At
- * full contrast those areas render as black holes punched through the model,
- * which reads as dirt rather than as drawing. Lifting the blacks to a warm dark
- * grey keeps every room number legible while letting the hatching sit back as
- * texture. design.md's calibration target is unshadowed paper landing near
- * #f6f3ef, which this holds.
- */
-function tone(src: ImageBitmap | HTMLCanvasElement): HTMLCanvasElement | ImageBitmap {
-  const w = src.width;
-  const h = src.height;
-  if (!w || !h) return src;
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return src;
-  ctx.filter = "brightness(1.06) contrast(0.78)";
-  ctx.drawImage(src as CanvasImageSource, 0, 0);
-  if ("close" in src && typeof src.close === "function") src.close();
-  return canvas;
-}
-
-/**
- * Decode and downscale. createImageBitmap does both off the main thread, which
- * matters because decoding a 7.7 Mpx JPEG on the main thread is a visible stall
- * on the frame the user switches into 3D.
- */
-async function decode(src: string, maxEdge: number): Promise<ImageBitmap | HTMLCanvasElement> {
-  const res = await fetch(src);
-  const blob = await res.blob();
-  if (typeof createImageBitmap === "function") {
-    try {
-      const probe = await createImageBitmap(blob);
-      const scale = Math.min(1, maxEdge / Math.max(probe.width, probe.height));
-      if (scale >= 1) return probe;
-      const w = Math.round(probe.width * scale);
-      const h = Math.round(probe.height * scale);
-      const out = await createImageBitmap(probe, {
-        resizeWidth: w,
-        resizeHeight: h,
-        resizeQuality: "high",
-      });
-      probe.close();
-      return out;
-    } catch {
-      // fall through to the canvas path
-    }
-  }
-  return await new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("no 2d context"));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas);
-    };
-    img.onerror = () => reject(new Error(`could not load ${src}`));
-    img.src = src;
-  });
 }

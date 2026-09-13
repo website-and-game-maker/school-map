@@ -5,15 +5,6 @@ import lowerData from "./floors/lower.json";
 import upperData from "./floors/upper.json";
 import stairsData from "./floors/stairs.json";
 
-import mainImg from "../assets/main-level.jpg";
-import lowerImg from "../assets/lower-level.jpg";
-import upperImg from "../assets/upper-level.jpg";
-
-export const FLOOR_IMAGES: Record<FloorId, string> = {
-  lower: lowerImg,
-  main: mainImg,
-  upper: upperImg,
-};
 
 export const FLOOR_ORDER: FloorId[] = ["lower", "main", "upper"];
 

@@ -7,7 +7,7 @@ import TourOverlay from "./components/TourOverlay";
 // the next ten seconds — fast on school wifi.
 const MapCanvas3D = lazy(() => import("./components/MapCanvas3D"));
 import SearchBox from "./components/SearchBox";
-import { FLOOR_IMAGES, FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
+import { FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
 import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
 import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
 import { buildSearchIndex, searchItems, type SearchItem } from "./lib/search";
@@ -30,10 +30,9 @@ export default function App() {
   // The 3D view is a second renderer of the state the 2D view already
   // computes — not a second feature. "All" only means something in 3D.
   const [view, setView] = useState<"2d" | "3d">("2d");
-  const [showAllFloors, setShowAllFloors] = useState(true);
   const [tourOpen, setTourOpen] = useState(false);
 
-  const [fromQuery, setFromQuery] = useState("Entrance C");
+  const [fromQuery, setFromQuery] = useState("Chap Court Entrance (C)");
   const [toQuery, setToQuery] = useState("");
   const [fromItem, setFromItem] = useState<SearchItem | null>(null);
   const [toItem, setToItem] = useState<SearchItem | null>(null);
@@ -55,11 +54,15 @@ export default function App() {
     [searchIndex]
   );
 
-  // Default start: Entrance C, resolved out of the real index so it behaves
-  // exactly like anything the user picks themselves.
+  // Default start: the Chap Court entrance, because the tour map marks it as
+  // the visitor entrance with the check-in desk — which is where someone who
+  // needs this app is most likely to be standing. Resolved out of the real
+  // index so it behaves exactly like anything the user picks themselves.
   useEffect(() => {
     if (fromItem) return;
-    const c = searchIndex.find((i) => i.kind === "entrance" && i.label === "Entrance C");
+    const c = searchIndex.find(
+      (i) => i.kind === "entrance" && i.label.startsWith("Chap Court")
+    );
     if (c) setFromItem(c);
   }, [searchIndex, fromItem]);
 
@@ -464,22 +467,11 @@ export default function App() {
       <div className="field">
         <label>Floor</label>
         <div className="floor-tabs">
-          {view === "3d" && (
-            <button
-              className={`floor-tab${showAllFloors ? " active" : ""}`}
-              onClick={() => setShowAllFloors(true)}
-            >
-              All
-            </button>
-          )}
           {FLOOR_ORDER.map((f) => (
             <button
               key={f}
-              className={`floor-tab${floorId === f && !(view === "3d" && showAllFloors) ? " active" : ""}`}
-              onClick={() => {
-                setShowAllFloors(false);
-                switchFloor(f);
-              }}
+              className={`floor-tab${floorId === f ? " active" : ""}`}
+              onClick={() => switchFloor(f)}
             >
               {FLOOR_LABELS[f].replace(" Level", "")}
               {segments.some((s) => s.floor === f) && <span className="route-dot" />}
@@ -613,7 +605,6 @@ export default function App() {
           <TransformComponent wrapperClass="tp-wrapper" contentClass="tp-content">
             <MapCanvas
               floor={floor}
-              imageSrc={FLOOR_IMAGES[floorId]}
               editMode={editMode}
               tool={tool}
               selectedId={selectedId}
@@ -647,7 +638,6 @@ export default function App() {
             floors={floors}
             stairs={stairs}
             activeFloor={floorId}
-            showAllFloors={showAllFloors}
             route={routeResult}
             routeKey={`${fromItem?.kind ?? ""}:${fromItem?.floor ?? ""}:${fromItem?.id ?? ""}|${toItem?.kind ?? ""}:${toItem?.floor ?? ""}:${toItem?.id ?? ""}|${legs.length}`}
             directions={directions}
@@ -661,7 +651,7 @@ export default function App() {
         {tourOpen && <TourOverlay onClose={() => setTourOpen(false)} />}
 
         <div className="map-badge">
-          {view === "3d" && showAllFloors ? "All Levels" : FLOOR_LABELS[floorId]}
+          {FLOOR_LABELS[floorId]}
           {destLabel && !editMode && <span className="map-badge-dest">→ {destLabel}</span>}
         </div>
       </main>

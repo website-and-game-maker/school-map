@@ -247,13 +247,13 @@
    "x": 401.0,
    "y": 894.0,
    "kind": "entrance",
-   "label": "Entrance B"
+   "label": "PAC Entrance (B)"
   },
   "Entrance C": {
    "x": 1119.6,
    "y": 894.0,
    "kind": "entrance",
-   "label": "Entrance C"
+   "label": "Chap Court Entrance (C)"
   },
   "Chap Court": {
    "x": 1086.2,
@@ -301,7 +301,7 @@
    "x": 1186.4,
    "y": 1506.0,
    "kind": "entrance",
-   "label": "Entrance A"
+   "label": "Front Door (A)"
   },
   "Chaparral Stadium": {
    "x": 1787.3,
@@ -361,7 +361,7 @@
    "x": 2157.5,
    "y": 1773.3,
    "kind": "entrance",
-   "label": "Entrance D"
+   "label": "Southeast Entrance (D)"
   },
   "Black Box Theater": {
    "x": 2298.5,

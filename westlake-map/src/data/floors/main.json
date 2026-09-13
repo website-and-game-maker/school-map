@@ -530,19 +530,19 @@
    "x": 652.9,
    "y": 688.2,
    "kind": "entrance",
-   "label": "Entrance C"
+   "label": "Chap Court Entrance (C)"
   },
   "Entrance A": {
    "x": 713.8,
    "y": 1537.8,
    "kind": "entrance",
-   "label": "Entrance A"
+   "label": "Front Door (A)"
   },
   "Entrance D": {
    "x": 2101.5,
    "y": 1722.4,
    "kind": "entrance",
-   "label": "Entrance D"
+   "label": "Southeast Entrance (D)"
   },
   "Chap Court": {
    "x": 591.9,
