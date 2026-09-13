@@ -39,6 +39,12 @@ TOL = 2.5
 # on the room's number, which is inside the room, so this only has to absorb
 # the label sitting on top of a wall.
 CLAIM_PX = 26
+# A pocket holding more than one room number, or bigger than any single room in
+# the building, is not a room -- it is rooms that leaked into each other or into
+# the corridor through a gap in the scan. Those get drawn as plain floor instead
+# of as one enormous room, which is what made the map look glitchy. The gym is
+# about 10,000 sq ft, so the cap sits above it.
+MERGED_AREA_PX = 120000
 
 
 def labelled_points(floor):
@@ -123,10 +129,16 @@ def build(floor, verbose=True):
             claimed.setdefault(comp, []).append(p)
 
     rooms = []
+    merged = []
     for comp, owners in claimed.items():
         sl = objs[comp - 1]
         poly = outline(lab[sl] == comp, offset=(sl[1].start, sl[0].start))
         if len(poly) < 6:
+            continue
+        area = int(sizes[comp - 1])
+        room_owners = [q for q in owners if q['kind'] == 'room']
+        if len(room_owners) > 1 or area > MERGED_AREA_PX:
+            merged.append({'area': area, 'poly': poly})
             continue
         owner = min(owners, key=lambda q: 0 if q['kind'] == 'room' else 1)
         rooms.append({
@@ -135,16 +147,14 @@ def build(floor, verbose=True):
             'kind': owner['kind'],
             'x': int(round(owner['x'])),
             'y': int(round(owner['y'])),
-            'area': int(sizes[comp - 1]),
+            'area': area,
             'poly': poly,
-            # Several labels in one pocket means an open suite, not a mistake.
-            'also': [q['label'] for q in owners if q is not owner][:6],
         })
 
     # Circulation: the big pockets nobody claimed. On these plans the corridors
     # are chopped into runs by every door frame, so there are several.
     order = np.argsort(sizes)[::-1]
-    corridors = []
+    corridors = list(merged)
     for i in order:
         comp = int(i + 1)
         if comp in claimed or sizes[i] < MIN_ROOM_PX * 2:
@@ -153,14 +163,14 @@ def build(floor, verbose=True):
         poly = outline(lab[sl] == comp, offset=(sl[1].start, sl[0].start))
         if len(poly) >= 6:
             corridors.append({'area': int(sizes[i]), 'poly': poly})
-        if len(corridors) >= 40:
+        if len(corridors) >= 60:
             break
 
     if verbose:
-        ew.log(f'  {floor}: {n} pockets, {len(rooms)}/{len(named)} labels matched, '
-               f'{len(corridors)} circulation regions')
-        missing = [p['label'] for p in named if not any(
-            r['id'] == p['id'] or p['label'] in r['also'] for r in rooms)]
+        ew.log(f'  {floor}: {n} pockets, {len(rooms)} rooms drawn, '
+               f'{len(merged)} merged blobs demoted to floor, '
+               f'{len(corridors)} floor regions, {len(named)} labels')
+        missing = [p['label'] for p in named if not any(r['id'] == p['id'] for r in rooms)]
         if missing:
             ew.log(f'    unmatched ({len(missing)}): {missing[:12]}')
 
@@ -171,6 +181,11 @@ def build(floor, verbose=True):
         'h': d['image']['h'],
         'rooms': rooms,
         'corridors': corridors,
+        # Every traced name, drawn as text regardless of whether its pocket
+        # survived as a room. The number is the thing people navigate by.
+        'labels': [{'label': p['label'], 'kind': p['kind'],
+                    'x': int(round(p['x'])), 'y': int(round(p['y']))}
+                   for p in named],
     }
 
 

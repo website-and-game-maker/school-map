@@ -30,17 +30,27 @@ export interface RoomShape {
   also?: string[];
 }
 
+export interface PlanLabel {
+  label: string;
+  kind: "room" | "landmark";
+  x: number;
+  y: number;
+}
+
 export interface RoomsFile {
   floor: FloorId;
   w: number;
   h: number;
   rooms: RoomShape[];
+  /** Circulation, plus any pocket that merged and is not a single room. */
   corridors: { area: number; poly: number[] }[];
+  labels: PlanLabel[];
 }
 
 interface WallsLite {
   quant: number;
   boxes: number[];
+  footprint: { outer: number[]; holes: number[][] }[];
 }
 
 const ROOMS: Record<FloorId, RoomsFile> = {
@@ -107,7 +117,18 @@ export function renderFloorPlan(floor: FloorId, opts: FloorPlanOptions): HTMLCan
     ctx.closePath();
   };
 
-  // Circulation first: it is the ground everything else sits on.
+  // The building's footprint is the floor. Without it, any pocket that is
+  // neither a recognised room nor a traced corridor shows the page colour
+  // through, and the map reads as though it has holes punched in it.
+  ctx.fillStyle = INK.corridor;
+  for (const part of walls.footprint) {
+    if (part.outer.length >= 6) {
+      path(part.outer);
+      ctx.fill();
+    }
+  }
+
+  // Circulation next: it is the ground everything else sits on.
   ctx.fillStyle = INK.corridor;
   for (const c of data.corridors) {
     if (c.poly.length >= 6) {
@@ -135,15 +156,21 @@ export function renderFloorPlan(floor: FloorId, opts: FloorPlanOptions): HTMLCan
   }
 
   if (labels) {
-    ctx.fillStyle = INK.label;
+    // Every traced name, not just the ones whose pocket survived as a room.
+    // A room number is what people actually navigate by, so it has to appear
+    // even where the scan let two rooms leak into each other.
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    for (const r of data.rooms) {
-      // Below this the number is wider than the room and just makes a smudge.
-      if (r.area < 1400) continue;
-      const size = r.kind === "landmark" ? 15 : 12;
-      ctx.font = `${r.kind === "landmark" ? 600 : 500} ${size}px "Inter", system-ui, sans-serif`;
-      ctx.fillText(r.label, r.x, r.y);
+    for (const l of data.labels) {
+      const size = l.kind === "landmark" ? 15 : 12;
+      ctx.font = `${l.kind === "landmark" ? 600 : 500} ${size}px "Inter", system-ui, sans-serif`;
+      // A halo keeps the number readable where it sits over a wall.
+      ctx.lineWidth = 3 / scale > 3 ? 3 : 3;
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.lineJoin = "round";
+      ctx.strokeText(l.label, l.x, l.y);
+      ctx.fillStyle = INK.label;
+      ctx.fillText(l.label, l.x, l.y);
     }
   }
 
