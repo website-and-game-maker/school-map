@@ -45,6 +45,10 @@ jobs:
       - name: Build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
+          # Only the SHA-256 of the editor key, never the key. If the variable
+          # is unset the editing tools are simply absent from the published
+          # site, which is the safe way for this to fail.
+          VITE_EDIT_KEY_SHA256: ${{ vars.EDIT_KEY_SHA256 }}
         run: npm run build
 
       # Pages serves 404.html for any unknown path. The app is a single page

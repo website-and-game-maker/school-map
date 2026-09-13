@@ -12,6 +12,8 @@ import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
 import { buildSearchIndex, searchItems, type SearchItem } from "./lib/search";
 import { linksFromMarks, stairMarks } from "./lib/stairsFromMarks";
 import { downloadJson, saveFloorToDisk } from "./lib/save";
+import { resolveEditAccess } from "./lib/access";
+import { buildProposal, downloadProposal } from "./lib/proposal";
 import type { FloorData, FloorId, FloorPoint } from "./types";
 import "./App.css";
 
@@ -36,11 +38,24 @@ export default function App() {
   const [toItem, setToItem] = useState<SearchItem | null>(null);
 
   const [editMode, setEditMode] = useState(false);
+  // Null until the check resolves, so the editing tools never flash up for a
+  // visitor while an async check is still in flight.
+  const [canEdit, setCanEdit] = useState<boolean | null>(null);
   const [tool, setTool] = useState<EditTool>("select");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
   const [sheetOpen, setSheetOpen] = useState(true);
   const [activeStep, setActiveStep] = useState<number | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    resolveEditAccess().then((ok) => {
+      if (live) setCanEdit(ok);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const mapAreaRef = useRef<HTMLDivElement | null>(null);
@@ -282,16 +297,31 @@ export default function App() {
     }));
   }
 
+  /**
+   * Editing never writes to the live map. Against `npm run dev` it writes the
+   * tracked JSON, because that is a maintainer editing their own checkout. On
+   * the published site there is nothing to write to, so the edit leaves as a
+   * proposal for somebody with repository access to review and merge.
+   */
   async function handleSave() {
-    setSaveStatus("Saving…");
-    const ok = await saveFloorToDisk(floorId, floors[floorId]);
-    if (ok) {
-      setSaveStatus(`Saved to src/data/floors/${floorId}.json`);
+    const base = INITIAL_FLOORS[floorId];
+    const proposal = buildProposal(floorId, base, floors[floorId]);
+    if (import.meta.env.DEV) {
+      setSaveStatus("Saving…");
+      const ok = await saveFloorToDisk(floorId, floors[floorId]);
+      setSaveStatus(
+        ok
+          ? `Written to src/data/floors/${floorId}.json — still needs committing`
+          : "Dev server not reachable — downloaded a proposal instead"
+      );
+      if (!ok) downloadProposal(proposal);
     } else {
-      setSaveStatus("Dev server not reachable — downloaded the file instead");
-      downloadJson(`${floorId}.json`, floors[floorId]);
+      downloadProposal(proposal);
+      setSaveStatus(
+        `Proposal downloaded — ${proposal.summary.length} change(s). Nothing is live until it is reviewed.`
+      );
     }
-    window.setTimeout(() => setSaveStatus(""), 4000);
+    window.setTimeout(() => setSaveStatus(""), 6000);
   }
 
   const selectedPoint = selectedId ? floor.points[selectedId] : null;
@@ -478,7 +508,7 @@ export default function App() {
         </div>
       </div>
 
-      {view === "2d" && (
+      {view === "2d" && canEdit && (
       <div className="field edit-toggle-row">
         <button
           className={`edit-toggle${editMode ? " on" : ""}`}
@@ -547,15 +577,19 @@ export default function App() {
             </div>
           )}
 
+          <p className="review-note">
+            Changes are only in this browser. The published map changes when a
+            reviewer merges them — nothing here affects what anyone else sees.
+          </p>
           <div className="save-row">
             <button className="save-btn" onClick={handleSave}>
-              Save {FLOOR_LABELS[floorId]}
+              Propose changes
             </button>
             <button
               className="download-btn"
               onClick={() => downloadJson(`${floorId}.json`, floors[floorId])}
             >
-              Download JSON
+              Raw JSON
             </button>
           </div>
           {saveStatus && <p className="save-status">{saveStatus}</p>}

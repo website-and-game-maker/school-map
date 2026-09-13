@@ -107,6 +107,35 @@ The repository is **public**, which is what GitHub Pages requires on a free
 account, so the floor plans are publicly readable. Making it private disables the
 site unless the account has Pages for private repos.
 
+## Who can edit, and how a change becomes real
+
+Two separate mechanisms, and it matters which one is doing the work.
+
+**What actually protects the map is GitHub, not the app.** The site is static:
+there is no server and no session, so nothing a browser does can change what
+anyone else sees. The published map is whatever is committed on `main`, and
+`main` is protected — a pull request with one approving review is required to
+merge. Direct pushes by an admin are still allowed, so the owner is not locked
+out of their own project. Collaborators are added under repository Settings →
+Collaborators; being a collaborator is what "having access" means.
+
+**The editor key only hides the UI.** `src/lib/access.ts` shows the editing
+tools when `?edit=<key>` matches, and remembers it. Only the SHA-256 of the key
+is baked into the bundle (build-time `VITE_EDIT_KEY_SHA256`, supplied by the
+repo variable `EDIT_KEY_SHA256`), so reading the JavaScript does not hand
+anybody the key. That is better than a plaintext check and it is still not a
+security boundary — a determined person can edit their own copy of the page.
+They just cannot make anyone else see it. If the variable is missing the tools
+are absent entirely, which is the correct way for this to fail.
+
+**Edits leave as proposals.** "Propose changes" downloads
+`proposal-<floor>.json`: the full floor data plus a plain-English list of what
+changed, so a reviewer can tell what they are accepting without reading a JSON
+diff. To accept one, copy its `data` over `src/data/floors/<floor>.json`, open a
+PR, and merge it — the deploy runs on merge. Against `npm run dev` the button
+writes the tracked file directly, because that is a maintainer editing their own
+checkout; it still has to be committed.
+
 ## Repository layout
 
 One repo, `school-map`. `westlake-map/` used to be a nested git repo and is now
