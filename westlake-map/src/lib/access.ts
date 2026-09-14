@@ -16,9 +16,37 @@
 // force a preimage. That is a real improvement over a plaintext check, and it
 // is still not a security boundary: treat it as a lock on a door that has no
 // walls around it.
+//
+// The key used to be supplied as `?edit=…` in the URL and nothing else, which
+// had two problems worth fixing. It is unguessable that the query parameter
+// exists at all, so an editor who forgets the URL has no way back in; and a URL
+// carrying a secret gets screenshotted, bookmarked and pasted into group chats.
+// So the door is now a pencil in the corner that asks for the key. The query
+// parameter still works, because links to it exist, but it is no longer the
+// only way and the key is stripped out of the address bar on arrival.
 
 const HASH = (import.meta.env.VITE_EDIT_KEY_SHA256 as string | undefined)?.trim() ?? "";
 const STORAGE_KEY = "westlake-map:editor";
+
+/**
+ * What to tell someone staring at an empty key box. Describing the SHAPE of the
+ * key is not a leak — it narrows a brute force by nothing that matters against
+ * SHA-256 — and without it the honest editor cannot tell "I mistyped" from
+ * "I have the wrong key entirely".
+ */
+export const EDIT_KEY_FORMAT = {
+  placeholder: "chap-xxxx-xxxx",
+  hint: "Three lowercase groups joined by hyphens, starting with “chap” — for example chap-court-1976. Case and hyphens both matter.",
+  pattern: /^[a-z0-9]+(-[a-z0-9]+){1,3}$/,
+} as const;
+
+/** Does this even look like a key? Cheap client-side sanity check, no crypto. */
+export function looksLikeKey(text: string): boolean {
+  return EDIT_KEY_FORMAT.pattern.test(text.trim());
+}
+
+/** True when this build has no key configured, so editing is impossible. */
+export const EDITING_CONFIGURED = HASH.length > 0 || import.meta.env.DEV;
 
 async function sha256Hex(text: string): Promise<string> {
   const bytes = new TextEncoder().encode(text);
@@ -38,7 +66,7 @@ function remember(hash: string): void {
   try {
     localStorage.setItem(STORAGE_KEY, hash);
   } catch {
-    // Not being able to remember is survivable: the link still works.
+    // Not being able to remember is survivable: the key can be entered again.
   }
 }
 
@@ -51,11 +79,27 @@ export function forgetEditor(): void {
 }
 
 /**
- * Decide whether to show the editing tools, and strip the key out of the URL so
- * it does not sit in the address bar to be screenshotted or pasted into a chat.
- *
- * In dev the tools are always available — the whole point of `npm run dev` is to
- * edit the data, and there is nobody to hide them from.
+ * Check a key typed into the pencil dialog. Returns true and remembers it on a
+ * match; returns false without remembering anything otherwise.
+ */
+export async function unlockWithKey(key: string): Promise<boolean> {
+  // In dev every key opens the tools, because the whole point of `npm run dev`
+  // is to edit the data and there is nobody to hide them from.
+  if (import.meta.env.DEV) return true;
+  if (!HASH) return false;
+  try {
+    const hash = await sha256Hex(key.trim());
+    if (hash !== HASH) return false;
+    remember(hash);
+    return true;
+  } catch {
+    return false; // no SubtleCrypto (insecure origin) — fail closed
+  }
+}
+
+/**
+ * Decide whether to show the editing tools on load, and strip any key out of
+ * the URL so it does not sit in the address bar to be screenshotted.
  */
 export async function resolveEditAccess(): Promise<boolean> {
   if (import.meta.env.DEV) return true;
@@ -68,16 +112,7 @@ export async function resolveEditAccess(): Promise<boolean> {
   if (supplied) {
     url.searchParams.delete("edit");
     window.history.replaceState(null, "", url.toString());
-    try {
-      const hash = await sha256Hex(supplied);
-      if (hash === HASH) {
-        remember(hash);
-        return true;
-      }
-    } catch {
-      return false; // no SubtleCrypto (insecure origin) — fail closed
-    }
-    return false;
+    return unlockWithKey(supplied);
   }
 
   return remembered() === HASH;

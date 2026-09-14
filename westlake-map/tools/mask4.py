@@ -10,7 +10,8 @@ import numpy as np, json, base64, sys
 from PIL import Image
 from scipy import ndimage as ndi
 
-PAGES = {'lower': 'page1.png', 'main': 'page0.png', 'upper': 'page2.png'}
+import plans
+
 CELL = 6
 DARK = 170
 SPECK = 6
@@ -76,7 +77,7 @@ def carve_doors(free, verbose=False):
     return free, doors
 
 def build(floor, verbose=False):
-    a, ink, fp = ink_and_footprint(PAGES[floor])
+    a, ink, fp = ink_and_footprint(plans.page_path(floor))
     free = (~ink) & fp
     # remember the circulation network *before* carving: that's what tells the
     # router which open space is hallway and which is the inside of a room

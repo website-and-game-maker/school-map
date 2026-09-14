@@ -6,14 +6,28 @@ import MapCanvas, { type EditTool } from "./components/MapCanvas";
 // the next ten seconds — fast on school wifi.
 const MapCanvas3D = lazy(() => import("./components/MapCanvas3D"));
 import SearchBox from "./components/SearchBox";
+import DimensionSlider from "./components/DimensionSlider";
+import EditorKeyDialog from "./components/EditorKeyDialog";
+import FeedbackPanel from "./components/FeedbackPanel";
 import { FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
 import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
 import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
 import { buildSearchIndex, searchItems, type SearchItem } from "./lib/search";
 import { linksFromMarks, stairMarks } from "./lib/stairsFromMarks";
 import { downloadJson, saveFloorToDisk } from "./lib/save";
-import { resolveEditAccess } from "./lib/access";
+import { EDITING_CONFIGURED, forgetEditor, resolveEditAccess } from "./lib/access";
+import {
+  NUDGE,
+  REFERENCE_FLOOR,
+  describe as describeAlignment,
+  forFile as alignmentForFile,
+  initialPlacements,
+  isDirty as alignmentDirty,
+  markVerified,
+  nudge as nudgeAlignment,
+} from "./lib/alignment";
 import { buildProposal, downloadProposal } from "./lib/proposal";
+import { reviewFor } from "./lib/scanReview";
 import type { FloorData, FloorId, FloorPoint } from "./types";
 import "./App.css";
 
@@ -28,9 +42,18 @@ export default function App() {
   const stairs = useMemo(() => [...markedStairs, ...INITIAL_STAIRS], [markedStairs]);
   const markCount = useMemo(() => stairMarks(floors).length, [floors]);
   const [floorId, setFloorId] = useState<FloorId>("main");
-  // The 3D view is a second renderer of the state the 2D view already
-  // computes — not a second feature. "All" only means something in 3D.
-  const [view, setView] = useState<"2d" | "3d">("2d");
+
+  // How much 3D, 0..1. See three/units.ts. This is one dial, not two view
+  // modes: the 2D renderer is what the flat end of it looks like, and the app
+  // swaps to it there because that end is also where editing happens.
+  //
+  // It starts at BUILDING, so the first thing anyone sees is the building. A
+  // flat plan of a three-storey school does not tell you it has three storeys,
+  // and that is the single most common thing people get wrong about this place.
+  const [dimension, setDimension] = useState(0.5);
+  const [showStairColumns, setShowStairColumns] = useState(true);
+  const [placements, setPlacements] = useState(initialPlacements);
+  const view: "2d" | "3d" = dimension <= 0.001 ? "2d" : "3d";
 
   const [fromQuery, setFromQuery] = useState("Chap Court Entrance (C)");
   const [toQuery, setToQuery] = useState("");
@@ -38,6 +61,10 @@ export default function App() {
   const [toItem, setToItem] = useState<SearchItem | null>(null);
 
   const [editMode, setEditMode] = useState(false);
+  // Editing happens on the flat plan: the SVG overlay that carries the points,
+  // the drag handles and the click targets is a 2D thing. Turning editing on
+  // therefore runs the dial down to 0 rather than refusing the two to coexist.
+  const [dimensionBeforeEdit, setDimensionBeforeEdit] = useState(0.5);
   // Null until the check resolves, so the editing tools never flash up for a
   // visitor while an async check is still in flight.
   const [canEdit, setCanEdit] = useState<boolean | null>(null);
@@ -250,6 +277,20 @@ export default function App() {
 
   // ---------------- edit mode ----------------
 
+  function toggleEditMode() {
+    setEditMode((on) => {
+      if (!on) {
+        setDimensionBeforeEdit(dimension);
+        setDimension(0);
+      } else {
+        setDimension(dimensionBeforeEdit);
+      }
+      return !on;
+    });
+    setSelectedId(null);
+    setTool("select");
+  }
+
   function updateFloor(updater: (f: FloorData) => FloorData) {
     // Cached distance fields are keyed to point positions, so moving a stair
     // or a room invalidates them.
@@ -257,8 +298,35 @@ export default function App() {
     setFloors((prev) => ({ ...prev, [floorId]: updater(prev[floorId]) }));
   }
 
+  /**
+   * How close two stair markers on the SAME floor have to be before the second
+   * one is treated as a correction of the first rather than a new stairwell.
+   * Generous, because the point of the rule is that a stairwell gets exactly
+   * one marker per floor — two markers 30 ft apart on Main cannot both be the
+   * bottom of the same flight, and if they are both kept the cross-floor
+   * matching has to guess which one Upper's marker pairs with.
+   */
+  const SAME_STAIR_PX = 150;
+
   function onAddPoint(x: number, y: number) {
     const isStairs = tool === "add-stairs";
+
+    // One point per stairwell per floor. Clicking again nearby moves the marker
+    // you already placed instead of adding a rival to it, so "which stairwell
+    // is this" always has one answer and the column drawn through the storeys
+    // is unambiguous.
+    if (isStairs) {
+      const existing = Object.entries(floor.points).find(
+        ([, p]) =>
+          p.kind === "poi" && p.poiType === "stairs" && Math.hypot(p.x - x, p.y - y) < SAME_STAIR_PX
+      );
+      if (existing) {
+        onMovePoint(existing[0], x, y);
+        setSelectedId(existing[0]);
+        return;
+      }
+    }
+
     const id = `${isStairs ? "stairs" : "wc"}-${Date.now()}`;
     const point: FloorPoint = {
       x: Math.round(x),
@@ -324,6 +392,71 @@ export default function App() {
     window.setTimeout(() => setSaveStatus(""), 6000);
   }
 
+  // ---------------- what the scan reader is unsure about ----------------
+
+  const review = useMemo(() => reviewFor(floorId, floor), [floorId, floor]);
+
+  /** Accept one of the reader's low-confidence reads as a real room. */
+  function acceptSuggestion(s: { text: string; x: number; y: number; conf: number }) {
+    updateFloor((f) => ({
+      ...f,
+      points: {
+        ...f.points,
+        [s.text]: {
+          x: s.x,
+          y: s.y,
+          kind: "room",
+          label: s.text,
+          // Recorded as a human decision, not as something the scan established
+          // on its own — the whole reason this room is in the queue is that the
+          // reader was not sure.
+          source: "scan-accepted",
+          confidence: s.conf,
+        },
+      },
+    }));
+    setSelectedId(s.text);
+    frameOn({ minX: s.x - 260, maxX: s.x + 260, minY: s.y - 260, maxY: s.y + 260 });
+  }
+
+  // ---------------- floor alignment ----------------
+
+  const canAlign = floorId !== REFERENCE_FLOOR;
+  const alignDirty = useMemo(() => alignmentDirty(placements), [placements]);
+
+  function bump(change: Parameters<typeof nudgeAlignment>[2]) {
+    setPlacements((prev) => nudgeAlignment(prev, floorId, change));
+  }
+
+  function resetAlignment() {
+    setPlacements(initialPlacements());
+  }
+
+  function proposeAlignment() {
+    const payload = {
+      kind: "westlake-map-alignment-proposal",
+      version: 1,
+      summary: describeAlignment(placements),
+      data: alignmentForFile(placements),
+    };
+    if (import.meta.env.DEV) {
+      setSaveStatus("Saving alignment…");
+      void saveFloorToDisk("align3d", payload.data).then((ok) => {
+        setSaveStatus(
+          ok
+            ? "Written to src/data/floors/align3d.json — still needs committing"
+            : "Dev server not reachable — downloaded the alignment instead"
+        );
+        if (!ok) downloadJson("proposal-align3d.json", payload);
+        window.setTimeout(() => setSaveStatus(""), 6000);
+      });
+      return;
+    }
+    downloadJson("proposal-align3d.json", payload);
+    setSaveStatus(`Alignment proposal downloaded — ${payload.summary.length} change(s).`);
+    window.setTimeout(() => setSaveStatus(""), 6000);
+  }
+
   const selectedPoint = selectedId ? floor.points[selectedId] : null;
   const destLabel = toItem ? toItem.label : "";
   const routeMissing = Boolean(fromItem && toItem && !routeResult);
@@ -338,26 +471,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* A view mode for the whole app, so it sits above the search fields.
-          White thumb, not the maroon fill: maroon in this app means "the
-          subject you selected" — a floor, a leg — and a view mode isn't one. */}
-      <div className="view-toggle">
-        <button
-          className={view === "2d" ? "active" : ""}
-          onClick={() => setView("2d")}
-        >
-          2D Plan
-        </button>
-        <button
-          className={view === "3d" ? "active" : ""}
-          onClick={() => {
-            setEditMode(false);
-            setView("3d");
-          }}
-        >
-          3D View
-        </button>
-      </div>
+      {/* One dial from a flat plan to an exploded stack, instead of two view
+          modes. The interesting positions are the ones in between. */}
+      <DimensionSlider value={dimension} onChange={setDimension} disabled={editMode} />
 
       {!editMode && (
         <>
@@ -508,19 +624,12 @@ export default function App() {
         </div>
       </div>
 
-      {view === "2d" && canEdit && (
-      <div className="field edit-toggle-row">
-        <button
-          className={`edit-toggle${editMode ? " on" : ""}`}
-          onClick={() => {
-            setEditMode((v) => !v);
-            setSelectedId(null);
-            setTool("select");
-          }}
-        >
-          {editMode ? "Done editing" : "✎ Edit this floor"}
-        </button>
-      </div>
+      {canEdit && (
+        <div className="field edit-toggle-row">
+          <button className={`edit-toggle${editMode ? " on" : ""}`} onClick={toggleEditMode}>
+            {editMode ? "Done editing" : "✎ Edit this floor"}
+          </button>
+        </div>
       )}
 
       {editMode && (
@@ -577,6 +686,105 @@ export default function App() {
             </div>
           )}
 
+          {/* ---- what the scan reader could not settle ---- */}
+          {(review.suggestions.length > 0 || review.missing.length > 0) && (
+            <div className="review-panel">
+              <p className="align-title">The scan isn't sure about these</p>
+              <p className="tool-hint">
+                <code>tools/read_plan.py</code> read the room numbers straight off the plan and
+                applied the {review.confirmed} it was confident about on this floor. These it saw
+                but couldn't settle. Accepting one drops a room at the spot the scan points to.
+              </p>
+              {review.suggestions.map((s) => (
+                <div key={s.text} className="review-row">
+                  <div>
+                    <strong>{s.text}</strong>
+                    <span className="review-conf">{Math.round(s.conf * 100)}% sure</span>
+                    {s.was && s.was.length > 0 && (
+                      <span className="review-was">was traced as {s.was.join("/")}</span>
+                    )}
+                  </div>
+                  <button onClick={() => acceptSuggestion(s)}>Place it</button>
+                </div>
+              ))}
+              {review.missing.length > 0 && (
+                <p className="tool-hint">
+                  No reading at all for{" "}
+                  <strong>{review.missing.join(", ")}</strong>. Their old positions were inside
+                  rooms the plan prints a different number in, so they were removed rather than
+                  left sending people to the wrong door. Drop them in by hand if you know where
+                  they are.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ---- how the floors stack ---- */}
+          <div className="align-panel">
+            <p className="align-title">How the floors line up</p>
+            <p className="tool-hint">
+              The three plans are separate scans with no registration marks, so where a storey sits
+              relative to the others is a fit through a handful of shared entrances — out by
+              anywhere from 10 to 51 ft. Slide the 3D dial up to <strong>Exploded</strong> and watch
+              the coloured stairwell columns: where two floors are misaligned, the column joining
+              them <em>leans</em>. Nudge until it stands up.
+            </p>
+            <label className="align-check">
+              <input
+                type="checkbox"
+                checked={showStairColumns}
+                onChange={(e) => setShowStairColumns(e.target.checked)}
+              />
+              Show stairwell columns
+            </label>
+
+            {canAlign ? (
+              <>
+                <div className="align-grid">
+                  <button onClick={() => bump({ ty: -NUDGE.coarse })} title="North, 25 px">↑↑</button>
+                  <button onClick={() => bump({ ty: -NUDGE.fine })} title="North, 4 px">↑</button>
+                  <button onClick={() => bump({ ty: NUDGE.fine })} title="South, 4 px">↓</button>
+                  <button onClick={() => bump({ ty: NUDGE.coarse })} title="South, 25 px">↓↓</button>
+                  <button onClick={() => bump({ tx: -NUDGE.coarse })} title="West, 25 px">←←</button>
+                  <button onClick={() => bump({ tx: -NUDGE.fine })} title="West, 4 px">←</button>
+                  <button onClick={() => bump({ tx: NUDGE.fine })} title="East, 4 px">→</button>
+                  <button onClick={() => bump({ tx: NUDGE.coarse })} title="East, 25 px">→→</button>
+                  <button onClick={() => bump({ scale: -NUDGE.scale })} title="Shrink this storey">−%</button>
+                  <button onClick={() => bump({ scale: NUDGE.scale })} title="Grow this storey">+%</button>
+                  <button onClick={() => bump({ rotationDeg: -NUDGE.rotation })} title="Rotate anticlockwise">↺</button>
+                  <button onClick={() => bump({ rotationDeg: NUDGE.rotation })} title="Rotate clockwise">↻</button>
+                </div>
+                <p className="align-readout">
+                  {FLOOR_LABELS[floorId]}: offset {Math.round(placements[floorId].tx)},
+                  {Math.round(placements[floorId].ty)} px · scale{" "}
+                  {placements[floorId].scale.toFixed(4)} · {placements[floorId].rotationDeg.toFixed(2)}°
+                  {placements[floorId].verified ? " · verified" : " · not verified"}
+                </p>
+                <label className="align-check">
+                  <input
+                    type="checkbox"
+                    checked={placements[floorId].verified}
+                    onChange={(e) => setPlacements((p) => markVerified(p, floorId, e.target.checked))}
+                  />
+                  I have checked this storey against the one below by eye
+                </label>
+                <div className="save-row">
+                  <button className="save-btn" disabled={!alignDirty} onClick={proposeAlignment}>
+                    Propose alignment
+                  </button>
+                  <button className="download-btn" disabled={!alignDirty} onClick={resetAlignment}>
+                    Reset
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="tool-hint">
+                {FLOOR_LABELS[REFERENCE_FLOOR]} is the reference everything else was fitted
+                against, so it does not move. Switch to the Lower or Upper level to nudge one.
+              </p>
+            )}
+          </div>
+
           <p className="review-note">
             Changes are only in this browser. The published map changes when a
             reviewer merges them — nothing here affects what anyone else sees.
@@ -593,6 +801,18 @@ export default function App() {
             </button>
           </div>
           {saveStatus && <p className="save-status">{saveStatus}</p>}
+
+          <FeedbackPanel
+            context={{
+              floorId,
+              floor,
+              from: fromItem?.label ?? null,
+              to: toItem?.label ?? null,
+              selectedId,
+              lookingAt: selectedPoint ? [selectedPoint.x, selectedPoint.y] : null,
+              view,
+            }}
+          />
         </div>
       )}
 
@@ -605,10 +825,17 @@ export default function App() {
               for — mark them in Edit mode and cross-floor routes become exact.
             </li>
             <li>Restrooms aren't on the plan either — mark those the same way.</li>
+            <li>
+              How the three floors line up is fitted from a handful of shared entrances and is out
+              by 10–51 ft. Slide the dial to <strong>Exploded</strong> and the stairwell columns
+              show you where: a column that leans is a floor that needs nudging.
+            </li>
             <li>Photo walkthroughs, live hallway traffic, class/teacher search.</li>
           </ul>
           <p className="disclaimer">
-            Positions were traced by eye from the official floor plan, and distances are estimates.
+            Most room positions are now read off the official floor plan by machine, number and
+            all; the rest were traced by eye and are marked as such in the data. Distances are
+            estimates from a single scale constant either way.
           </p>
         </div>
       )}
@@ -626,7 +853,12 @@ export default function App() {
           maxScale={3}
           limitToBounds={false}
           doubleClick={{ disabled: editMode }}
-          panning={{ disabled: editMode }}
+          // Panning stays on in edit mode. It used to be switched off, which
+          // meant that the moment you started editing the map froze in place —
+          // you could not drag to see the part of the floor you wanted to fix.
+          // Dragging a point still moves the point rather than the map, because
+          // the point's own pointerdown stops the event before it gets here.
+          panning={{ velocityDisabled: editMode }}
         >
           <TransformComponent wrapperClass="tp-wrapper" contentClass="tp-content">
             <MapCanvas
@@ -664,14 +896,35 @@ export default function App() {
             floors={floors}
             stairs={stairs}
             activeFloor={floorId}
+            dimension={dimension}
+            showStairColumns={showStairColumns}
+            placements={placements}
             route={routeResult}
             routeKey={`${fromItem?.kind ?? ""}:${fromItem?.floor ?? ""}:${fromItem?.id ?? ""}|${toItem?.kind ?? ""}:${toItem?.floor ?? ""}:${toItem?.id ?? ""}|${legs.length}`}
             directions={directions}
             activeStep={activeStep}
             onPickFloor={switchFloor}
-            onFatal={() => setView("2d")}
+            // Auto-focus: orbit onto a storey and it becomes the active floor,
+            // so the panel, the badge and the model never disagree about which
+            // one you are reading.
+            onFocusFloor={setFloorId}
+            onFatal={() => setDimension(0)}
           />
           </Suspense>
+        )}
+
+        {EDITING_CONFIGURED && (
+          <div className="map-tools">
+            <EditorKeyDialog
+              unlocked={canEdit === true}
+              onUnlock={() => setCanEdit(true)}
+              onLock={() => {
+                forgetEditor();
+                setCanEdit(false);
+                if (editMode) toggleEditMode();
+              }}
+            />
+          </div>
         )}
 
         <div className="map-badge">
