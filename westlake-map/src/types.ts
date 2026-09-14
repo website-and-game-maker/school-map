@@ -7,7 +7,24 @@ export interface FloorPoint {
   y: number;
   kind: PointKind;
   label?: string;
+  /**
+   * Other names this space answers to in search. The plan often gives a room
+   * both a number and a name — 106 is the Sub-Varsity Gym, 108 is the Black Box
+   * Theater — and somebody looking for it will type whichever one they were
+   * told. The label is what gets drawn; the aliases are only ever matched.
+   */
+  aliases?: string[];
   poiType?: string; // e.g. "restroom" — only set when kind === "poi"
+  /**
+   * Where this point came from. "scan" means tools/read_plan.py read the number
+   * off the plan and was confident; "scan-accepted" means a person accepted a
+   * read the tool was not confident about; "traced" means somebody placed it by
+   * eye and the scan has never confirmed it. Worth keeping, because it is the
+   * difference between a position that is known and one that is believed.
+   */
+  source?: "scan" | "scan-accepted" | "traced";
+  /** The reader's confidence, 0..1, when `source` came from the scan. */
+  confidence?: number;
 }
 
 export interface FloorEdge {

@@ -11,6 +11,9 @@ Diagonal steps are derived from those two in the app.
 import numpy as np, json, base64, sys
 from scipy import ndimage as ndi
 import mask4
+import os
+
+import plans
 
 CELL = 6
 
@@ -21,8 +24,8 @@ def planes(floor):
     # Corridors get chopped into many components by door frames, so identify
     # rooms instead: any pre-carve pocket holding a traced room label is a room,
     # and everything else (hallways, lobbies, stairwells) is circulation.
-    pts = json.load(open(f'westlake-map/src/data/floors/{floor}.json'))['points']
-    a2, ink, fp = mask4.ink_and_footprint(mask4.PAGES[floor])
+    pts = json.load(open(os.path.join(plans.OUT_DIR, f'{floor}.json')))['points']
+    a2, ink, fp = mask4.ink_and_footprint(plans.page_path(floor))
     precarve = (~ink) & fp
     lab, n = ndi.label(precarve, structure=np.ones((3, 3)))
     room_labels = set()
@@ -167,16 +170,16 @@ def b64(mask):
 if __name__ == '__main__':
     for floor in (sys.argv[1:] or ['lower', 'main', 'upper']):
         rows, cols, walk, pub, east, south, doors = planes(floor)
-        pts_all = json.load(open(f'westlake-map/src/data/floors/{floor}.json'))['points']
+        pts_all = json.load(open(os.path.join(plans.OUT_DIR, f'{floor}.json')))['points']
         bridged = connect_grid(walk, east, south, pts_all, CELL)
         # connectivity report
         payload = {'floor': floor, 'cols': int(cols), 'rows': int(rows), 'cell': CELL,
                    'walk': b64(walk), 'pub': b64(pub), 'east': b64(east), 'south': b64(south),
                    'doors': [[int(x), int(y)] for x, y in doors]}
-        path = f'westlake-map/src/data/floors/nav-{floor}.json'
+        path = os.path.join(plans.OUT_DIR, f'nav-{floor}.json')
         json.dump(payload, open(path, 'w'))
         import os
-        pts = json.load(open(f'westlake-map/src/data/floors/{floor}.json'))['points']
+        pts = json.load(open(os.path.join(plans.OUT_DIR, f'{floor}.json')))['points']
         rooms = [p for p in pts.values() if p['kind'] == 'room']
         # reachability over the exported step planes
         parent = np.arange(rows * cols)

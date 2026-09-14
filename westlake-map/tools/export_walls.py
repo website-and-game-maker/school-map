@@ -37,6 +37,8 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage as ndi
 
+import plans
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The source scans deliberately do NOT live under src/: anything in there is
 # bundled and published. They sit in private-source/, which is gitignored, so
@@ -508,8 +510,7 @@ def footprint_parts(solid):
 # ------------------------------------------------------------------ build ----
 def build(floor, verbose=True):
     t0 = time.time()
-    path = os.path.join(ASSETS, f'{floor}-level.jpg')
-    grey, ink, page_fp = ink_and_footprint(path)
+    grey, ink, page_fp = ink_and_footprint(plans.page_path(floor))
     ink_in_page = ink & page_fp
     lines, per_ang = long_lines(ink_in_page)
     hatch = hatch_mask(ink_in_page, per_ang)
@@ -638,7 +639,7 @@ if __name__ == '__main__':
     floors = [a for a in args if not a.startswith('-')] or list(FLOORS)
     total = 0.0
     for fl in floors:
-        log(f'  {fl}: reading {os.path.join(ASSETS, fl + "-level.jpg")}')
+        log(f'  {fl}: reading {os.path.relpath(plans.page_path(fl), ROOT)}')
         r = build(fl)
         total += write_json(fl, r)[1]
         if do_render:

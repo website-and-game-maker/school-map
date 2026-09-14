@@ -26,6 +26,7 @@ import numpy as np
 from scipy import ndimage as ndi
 
 import export_walls as ew
+import plans
 
 # A pocket smaller than this is a wall gap or a scanning artefact, not a space.
 # At 2.6 px per foot this is about 90 sq ft, so a single office still counts;
@@ -95,7 +96,7 @@ def build(floor, verbose=True):
     is a nuisance for routing (mask4.py has to carve the doors open again) but it
     is exactly what is wanted here: before carving, each room is a sealed pocket.
     """
-    grey, ink, page_fp = ew.ink_and_footprint(os.path.join(ew.ASSETS, f'{floor}-level.jpg'))
+    grey, ink, page_fp = ew.ink_and_footprint(plans.page_path(floor))
     ink_in_page = ink & page_fp
     lines, per = ew.long_lines(ink_in_page)
     hatch = ew.hatch_mask(ink_in_page, per)

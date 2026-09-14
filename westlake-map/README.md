@@ -4,20 +4,68 @@ An interactive wayfinding map for Westlake High School — search a room, a plac
 ("Library", "Cafeteria"), or "restroom", and get walking directions drawn on the
 real floor plan, across all three levels if it needs stairs.
 
-**Status: v6.** All three floors traced (~280 rooms), routing runs on walls and doorways read
-out of the plan itself, so routes are the genuinely shortest sensible walk;
-there are turn-by-turn directions with distance and time; and it works on a
-phone. New in v6: a **3D view** of the actual building, extruded from the same
-scans, with the route drawn through it.
+**Status: v7.** All three floors mapped (~215 rooms), routing runs on walls and
+doorways read out of the plan itself, so routes are the genuinely shortest
+sensible walk; there are turn-by-turn directions with distance and time; and it
+works on a phone.
+
+New in v7:
+
+- **The room numbers are read off the plan by machine** rather than traced by
+  eye — see *Reading the plan* below. This found four rooms on the Main level
+  whose labels were a whole room out of step, so asking for 220 walked you to
+  218.
+- **One 3D dial instead of two view modes.** Flat plan → building → exploded
+  stack, on a slider, and 3D is what you get on arrival.
+- **Stairwell columns** tie each stairwell through the storeys, so the stack
+  reads as one building — and a leaning column is the floor alignment being
+  wrong, drawn at full size.
+- **A pencil in the corner** asks for the editor key, instead of the key living
+  in the URL.
+- **Feedback that is literally a prompt** you can hand to a coding agent.
 
 ## How it works
 
 Two interesting parts: how a route is found, and how a scanned PDF became a
 3D model of the school.
 
-## The 3D view
+## The 3D dial
 
-Switch with **2D Plan / 3D View** at the top of the panel.
+There used to be a **2D Plan / 3D View** toggle. Those were never two features —
+they were the two ends of one continuum — and presenting them as a choice hid
+the interesting part, which is everything in between. So there is one slider:
+
+| Position | Storey spacing | Camera | The question it answers |
+| --- | --- | --- | --- |
+| **Flat** | collapsed, one storey shown | straight down | *Where is 214 on this floor?* |
+| **Building** | 16 ft, the real spacing | 32° | *What does this place look like, and what is above me?* |
+| **Exploded** | 110 ft | 40° | *How do these three floors line up?* |
+
+The middle is the honest one; both ends are useful lies. At Flat the building is
+not flat, and at Exploded the floors are not 110 ft apart. Being able to slide
+between them is what teaches the layering — no static picture does.
+
+The flat end is where the 2D renderer takes over, because that end is also where
+editing happens: the points, drag handles and click targets live in an SVG
+overlay, which is a 2D thing.
+
+**Auto-focus.** Orbit onto a storey and it becomes the active floor — the panel,
+the floor badge and the model never disagree about which one you are reading.
+The storey nearest the orbit target wins, with a dead zone so a target sitting
+between two floors does not flip back and forth.
+
+**Stairwell columns.** Every stair link is drawn as a coloured column joining its
+marker on each floor it serves, same colour at every end. Three floor plates
+floating above one another look like three separate maps; what makes them read
+as one building is seeing the parts that pass through all of it. Guessed links
+(seeded from entrance names) are pale and translucent, links built from markers
+a human placed are solid, so you can see at a glance how much of the vertical
+structure is known and how much is assumed.
+
+That also makes the alignment honest: where two storeys are badly registered the
+column joining them visibly *leans*, and the lean is the registration error at
+full size. It is the instrument you read while using the align nudges in Edit
+mode.
 
 **The walls are the building's real walls.** `tools/export_walls.py` pulls them
 out of the same scans the router uses. The hard part is that the plan's ink is
@@ -69,6 +117,89 @@ recorded in `placement.ts`: the storeys genuinely differ in extent, so
 maximising overlap slides one storey inside the other's mass. It put the shared
 entrances 220-400 ft apart.
 
+## Reading the plan
+
+Every room position in this project used to be placed by a human clicking on the
+scan. That is slow, and it is wrong in ways nobody can see. On the Main level the
+points for 216, 218, 220 and 224 each sat one room short of the number they
+claimed — the point calling itself 220 was inside the room printed 218 — so the
+app confidently walked you to the wrong door and nothing in the pipeline could
+notice, because nothing in the pipeline ever looked at the number.
+
+`tools/read_plan.py` looks at the number. The idea that makes it work is small:
+
+> **A room's printed number is exactly the set of holes in its pocket.**
+
+`export_rooms.py` already establishes that these plans draw every door *closed*,
+so flooding the free space gives one sealed pocket per room. Fill that pocket's
+holes and subtract the pocket back off, and what is left is precisely the ink
+printed inside that room and touching nothing else: the number, and nothing but
+the number.
+
+That is the whole trick, and it matters because of what it replaces. The obvious
+approach — isolate text by subtracting the long-line wall skeleton, then filter
+for "text-like" components — was tried first and it mangles the glyphs: the line
+opening eats the vertical stroke of every `1` and clips the `4`s, because those
+*are* long straight runs. The pocket-hole test never touches a glyph. What comes
+out is a clean 42×27 crop of isolated digits, which is a thing OCR can read.
+
+The rest is bookkeeping:
+
+- **Dominant text size.** A room may hold a fixture symbol or a door tag as well
+  as its number. Keep the glyphs whose height matches the median — the number is
+  the largest text drawn inside a room.
+- **Rotation.** Narrow rooms have their number set vertically, which the crop's
+  aspect ratio gives away. Both rotations are tried and the grammar decides.
+- **Voting.** No single rendering of this stencil font is trustworthy; the same
+  crop reads `288C` at one scale and `2B8C` at another, because tesseract has no
+  prior that says a room number is mostly digits. Each crop goes through twelve
+  renderings — two scales × stroke-thickening on/off × three page-segmentation
+  modes — and reads matching the room-number grammar are weighted double. The
+  agreement across renderings is the confidence.
+- **Grammar.** `[1-4]\d\d[A-Z]?`, gated on the digits that storey actually uses
+  (100s lower, 200s main, 300s *and* 400s upper — the gyms and the PAC are 4xx).
+  A `283` read off the Upper sheet is a misread, not a room on the wrong floor.
+- **Position from geometry, never from OCR.** A room's anchor is its pocket's
+  *pole of inaccessibility* — the interior point furthest from any wall. It is
+  inside the room by construction and sits in open floor, which is where a route
+  should end. A traced point sits wherever the tracer clicked, which is usually
+  on the number and sometimes on a wall.
+
+**It reports, it does not overwrite.** Every room comes out tagged `confirmed`
+(scan and data agree), `corrected` (they disagree), `found` (a number in a pocket
+nothing claimed) or `unread`. Measured across all three sheets, every read that
+turned out to be a misread scored ≤ 0.33 and every correction that held up under
+inspection scored ≥ 0.50 — a real gap, which is what makes the 0.5 apply
+threshold defensible rather than a guess.
+
+Applying is a whole-floor rebuild, not a per-point patch. Patching in place would
+relabel 216 to "214" while the point already called 214 kept its name, and the
+floor would end up with two of them; the shift only resolves if the numbered set
+is rebuilt at once from the reads. Everything below the threshold goes into a
+review queue **inside the app** — Edit mode, *The scan isn't sure about these* —
+where each one is a place on the map you can jump to, look at, and accept with a
+click. Results:
+
+| Floor | Confirmed | Corrected | Newly found | Left for review |
+| --- | --- | --- | --- | --- |
+| Lower | 11 | 2 | 6 | 31 |
+| Main | 38 | 13 | 14 | 47 |
+| Upper | 35 | 7 | 13 | 21 |
+
+```
+python3 tools/plans.py MAPWestlake.pdf   # render the booklet into private-source/
+python3 tools/read_plan.py               # report only, writes nothing
+python3 tools/read_plan.py --apply       # act on the confident reads
+python3 tools/read_plan.py --render main # + a PNG of every read, for eyeballing
+```
+
+`tools/plans.py` is also the single place that knows where the scans live and
+what resolution they are. They render at 4× the PDF's user space — 288 dpi —
+because that is exactly the pixel size the shipped floor data was built at, so
+`PX_PER_FOOT`, `align3d.json` and every traced point survive a rebuild. The tools
+used to each name their own input file and disagree about it (`main-level.jpg`
+vs `page0.png`), so renaming one silently broke the other.
+
 ## Routing
 
 **The walls come from the scan.** `tools/mask4.py` reads each plan page and
@@ -116,8 +247,19 @@ verified and the router prefers them.
 
 **Restrooms aren't on the plan at all.** Mark them the same way.
 
-**Positions were traced by eye** from a scanned plan (OCR is useless on it), so
-they're approximate, and distances/times are estimates.
+**Most positions are now read off the plan; the rest were traced by eye.** Every
+room point carries a `source` — `scan` when `tools/read_plan.py` read its number
+off the drawing and was confident, `scan-accepted` when a person accepted a read
+the tool was unsure about, `traced` when somebody placed it by eye and the scan
+has never confirmed it. Distances and times are estimates from one scale
+constant either way.
+
+**Eight rooms are missing rather than wrong.** Where the scan positively
+contradicted a traced point — the pocket it sat in is printed with a different
+number — and the reader could not read that room anywhere else, the point was
+removed. A point the drawing says is somewhere else is worse than no point at
+all: it sends people to a specific wrong door, confidently. They are listed in
+Edit mode under *The scan isn't sure about these*.
 
 **On a phone, the 3D camera doesn't know about the bottom sheet.** The 2D view
 aims a route at the strip of map the sheet leaves visible; the 3D view centres
@@ -144,8 +286,31 @@ back into `src/data/floors/*.json` (a dev-only Vite middleware in
 `vite.config.ts`; it does nothing in a production build). Otherwise it falls back
 to downloading the JSON for you to swap in. Save each floor separately.
 
-Panning is disabled while editing so clicks manipulate the graph; scroll still
-zooms.
+Panning works while editing. It used to be switched off, which meant the map
+froze the moment you started editing and you could not drag to see the part of
+the floor you wanted to fix. Dragging a point still moves the point rather than
+the map, because the point's own `pointerdown` stops the event before the
+pan handler sees it.
+
+**One stair marker per floor.** Clicking **+ Stairs** near a marker you already
+placed on this floor moves it instead of adding a rival. Two markers 30 ft apart
+on Main cannot both be the bottom of the same flight, and if both are kept the
+cross-floor matching has to guess which one Upper's marker pairs with.
+
+**Aligning the floors.** *How the floors line up* in the edit panel nudges the
+active storey — position, scale, rotation — and the 3D view re-registers live.
+Main is the reference and does not move. Slide the dial to Exploded and nudge
+until the stairwell columns stand up straight. Ten minutes of this closes the
+largest accuracy gap in the 3D view; it leaves as `proposal-align3d.json`, or
+writes `align3d.json` directly under `npm run dev`.
+
+**Reporting something wrong.** *Report something wrong* takes a sentence in
+plain English and turns it into a prompt: your words quoted verbatim, plus the
+floor, the coordinates, the nearby traced points, and the handful of facts about
+this repository needed to act on it. Copy it into Claude Code, open it as a
+prefilled GitHub issue, or save the `.md`. The panel shows you the whole prompt
+before you send it anywhere — the app is speaking on your behalf and you should
+be able to read what it says.
 
 ## Running it
 
