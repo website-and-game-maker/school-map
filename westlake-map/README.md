@@ -29,93 +29,45 @@ New in v7:
 Two interesting parts: how a route is found, and how a scanned PDF became a
 3D model of the school.
 
-## The 3D dial
+## The tilt dial
 
-There used to be a **2D Plan / 3D View** toggle. Those were never two features —
-they were the two ends of one continuum — and presenting them as a choice hid
-the interesting part, which is everything in between. So there is one slider:
+One vertical slider, bottom right of the map. It swings the camera between
+looking straight down and looking across, and it does nothing else.
 
-| Position | Storey spacing | Camera | The question it answers |
-| --- | --- | --- | --- |
-| **Flat** | collapsed, one storey shown | straight down | *Where is 214 on this floor?* |
-| **Building** | 16 ft, the real spacing | 32° | *What does this place look like, and what is above me?* |
-| **Exploded** | 110 ft | 40° | *How do these three floors line up?* |
+It used to also open and close the storey stack — "Flat / Building / Exploded"
+— on the theory that a plan and an exploded diagram are two ends of one
+continuum. They are, but tying them to one control meant the building changed
+shape while you were changing your viewpoint, and a model that reshapes itself
+under you is one you stop trusting. Worse, the flat end swapped renderers, so
+pushing the slider all the way down jumped to a differently-scaled view of a
+different thing. The stack is now simply always open and the dial is a camera
+control; the two ends of it are the same model at the same scale.
 
-The middle is the honest one; both ends are useful lies. At Flat the building is
-not flat, and at Exploded the floors are not 110 ft apart. Being able to slide
-between them is what teaches the layering — no static picture does.
+The 2D renderer still exists, and editing is the one thing that uses it: the
+points, the drag handles and the click targets live in an SVG overlay, which is
+a 2D thing.
 
-The flat end is where the 2D renderer takes over, because that end is also where
-editing happens: the points, drag handles and click targets live in an SVG
-overlay, which is a 2D thing.
+**The floor picks itself.** From the route you asked for, and from the storey
+you orbit onto — the storey nearest the orbit target wins, with a dead zone so
+a target sitting between two floors does not flip back and forth. The stack of
+chips at the top right is the readout for that, ordered the way the floors
+actually are, and clicking one is an override rather than the main way in.
 
-**Auto-focus.** Orbit onto a storey and it becomes the active floor — the panel,
-the floor badge and the model never disagree about which one you are reading.
-The storey nearest the orbit target wins, with a dead zone so a target sitting
-between two floors does not flip back and forth.
+**Stairwell columns** join each stairwell through every storey it serves, same
+colour at both ends. Three floor plates floating above one another look like
+three separate maps; what makes them read as one building is seeing the parts
+that pass through all of it. Guessed links (seeded from entrance names) are
+pale and translucent, links from human-placed markers are solid.
 
-**Stairwell columns.** Every stair link is drawn as a coloured column joining its
-marker on each floor it serves, same colour at every end. Three floor plates
-floating above one another look like three separate maps; what makes them read
-as one building is seeing the parts that pass through all of it. Guessed links
-(seeded from entrance names) are pale and translucent, links built from markers
-a human placed are solid, so you can see at a glance how much of the vertical
-structure is known and how much is assumed.
+That also makes the alignment honest: where two storeys are badly registered
+the column visibly **leans**, and the lean is the registration error at full
+size. It is the instrument you read while using the align nudges in Edit mode.
 
-That also makes the alignment honest: where two storeys are badly registered the
-column joining them visibly *leans*, and the lean is the registration error at
-full size. It is the instrument you read while using the align nudges in Edit
-mode.
-
-**The walls are the building's real walls.** `tools/export_walls.py` pulls them
-out of the same scans the router uses. The hard part is that the plan's ink is
-not all architecture — it is also 216 room numbers, "LIBRARY", the school crest,
-and landscaping hatch, and extruding those gives you ten-foot-tall numerals
-standing in the middle of classrooms. Walls are separated from annotation by a
-multi-orientation *line opening*: a straight structuring element is swept at 12
-angles, and only ink that contains a long straight run in some direction
-survives. Measured on the Main sheet, the knee is at length 31 — at 25 the room
-numbers are still legible in the output, at 39 the partitions in the rotated 254
-wing start breaking up. What survives is restored to full wall thickness, small
-gaps are healed, and the result is decomposed into ~4-10k disjoint rectangles
-per floor (`src/data/floors/walls-*.json`, 295 KB for all three).
-
-**The geometry is greedy-meshed, not one box per rectangle.** `src/three/walls.ts`
-emits a vertical face only where a filled cell meets an empty one, merges
-collinear runs into long quads, and merges the top surface into maximal
-rectangles. Faces *between* touching rectangles are never generated. That is
-~178k triangles for the whole school in about 80 ms per floor, in roughly 22
-draw calls. Walls near the outside are 13.5 ft and interior partitions 10.5 ft,
-which is what makes the model read as a building with a boundary rather than a
-maze.
-
-**The floor is the scan itself.** Each storey's plate is the traced footprint,
-UV-mapped to that floor's page, so all 216 room numbers stay readable from
-above and nothing has to be re-labelled in 3D. Textures are downscaled off the
-main thread and only the focused storey gets the high-resolution copy.
-
-**The stack opens and closes as you orbit.** You cannot see into a building from
-outside, so the storeys separate to 40 ft when the camera is well above the
-horizon and collapse to a realistic 16 ft as you come down to eye level. The
-floor tabs gain an **All**; picking a single floor hides the storeys above it
-and drops the ones below to a muted plate.
-
-**Routes are lifted, not redrawn.** The same `GridRoute` the 2D view draws
-becomes a mitred ribbon — a wide translucent halo, a white casing and a dashed
-teal core, mirroring the 2D CSS — with a rung ladder wherever it changes floor.
-Distances in 3D and 2D come from the same numbers, so they always agree.
-
-**Floor registration is the rough part.** The three sheets are separate scans at
-different scales with no registration marks, so where each storey sits relative
-to the others is inferred. `tools/seed_align.py` fits scale and translation from
-the entrances the sheets share, with rotation pinned to 0, then nudges onto the
-wall structure. Residuals are 10-51 ft — good enough to read as one building,
-not good enough to trust, which is why every non-reference floor in
-`src/data/floors/align3d.json` is `"verified": false`. Registering the wall or
-footprint *masks* by correlation was tried and is worse, and the reason is
-recorded in `placement.ts`: the storeys genuinely differ in extent, so
-maximising overlap slides one storey inside the other's mass. It put the shared
-entrances 220-400 ft apart.
+**The site.** Sky with a real horizon, a ground that fades into it, and the
+building's own footprint laid on that ground beneath the stack. Without them the
+model floated in a flat void, which reads as unsettling rather than as neutral:
+with no horizon and no ground there is nothing in the picture that has a size,
+so the eye cannot place the building in a world. See `src/three/site.ts`.
 
 ## Reading the plan
 
@@ -199,6 +151,82 @@ because that is exactly the pixel size the shipped floor data was built at, so
 `PX_PER_FOOT`, `align3d.json` and every traced point survive a rebuild. The tools
 used to each name their own input file and disagree about it (`main-level.jpg`
 vs `page0.png`), so renaming one silently broke the other.
+
+## What is a wall
+
+The map is drawn from geometry, not from the scan, so something has to decide
+which ink is architecture. That decision used to be **"a wall is a long
+straight run of ink"**, separated from annotation by a multi-orientation line
+opening. It cannot tell a wall from anything else long and straight, and these
+drawings are full of long straight things that are not walls — so the published
+map drew **every door standing open**, drew the fixtures inside the small suites
+as a field of unreadable fragments, and passed the stems of the room numbers
+through as little wall stubs.
+
+The definition is now:
+
+> **A wall is ink with a different space on each side of it.**
+
+Label the free space, throw away the pockets too small to be a room, and mark
+the ink that has two different surviving labels within 11 px. A door swing arc
+is drawn *inside* one room, so it is near exactly one space and vanishes. So do
+the furniture, the fixtures and the text. A wall has a room on one side and a
+corridor on the other, so it stays.
+
+The size filter is not an arbitrary threshold. The counter of a printed `0` is a
+pocket of free space too — the ring of the glyph genuinely does separate the
+inside of the 0 from the room around it — so without a minimum size the digits
+with closed loops survive as little rings. Requiring a space to be room-sized
+(600 px, the same number `export_rooms.py` uses) removes them by saying what we
+actually mean: **a wall divides places you can stand.**
+
+### Drawn as lines, not as pixels
+
+The mask's boundary is rectilinear by construction — every step is one pixel —
+so a wall the scanner nudged half a pixel comes out as a staircase, and drawing
+that literally is what made the map look pixelated. `wall_outlines()` traces the
+mask and runs three passes over each ring:
+
+1. **Douglas–Peucker**, to drop the single-pixel steps.
+2. **Merge near-parallel neighbours.** A long wall the scan bent by a couple of
+   degrees halfway along arrives as two edges; this is the pass that answers
+   *"if a line is straight and gets bumped, ignore the bump"*.
+3. **Snap and re-cut.** Edges within 7° of an axis or a 45 are made exact, and
+   the corners are re-cut as the intersection of the snapped lines. The building
+   is drawn on a square grid, so an edge 2° off vertical is a scanning artefact
+   every time. A corner that lands more than 6 px from where the pixels put it
+   means the snap was wrong for that edge, and the traced corner is kept.
+
+The 3D view still extrudes the quantised rectangles — that is the right shape
+for a mesh. The 2D map draws the polygons.
+
+### The footprint
+
+Grown off the **storey mask**, not off the walls. It used to come from the
+walls, which worked while a wall was a thick restored line-opening: the
+dilate/fill/erode closed over the gaps and the result was the building.
+Separator walls are thinner, and the same steps then read most of the interior
+as "far from any wall" and carved it away as courtyard — Upper came out as a
+single 76-point scrap instead of four wings.
+
+### Known gap: the courtyard planting
+
+Chap Court's trees still come out as wall, and the reason is that the rule above
+is working correctly. A tree is drawn as a scalloped ring; the inside of that
+ring is a genuine pocket of free space; so the ring really does separate two
+spaces. Four ways of telling it from a wall were measured on these sheets and
+each one fails:
+
+| approach | why it fails |
+| --- | --- |
+| component shape (the shrub filter this file already had) | the planting is welded into the courtyard edging at every stage of the mask, so it is never the free-floating blob that filter needs |
+| a bigger cap for that filter | the clump is 47k px, and a cap that admits it also drops 149k px of real wall |
+| boundary straightness | tree pockets average a 10.4 px edge; real small rooms run 7.7–9.4 |
+| axis alignment | the Black Box / Sub-Varsity wing is drawn at 45° and scores 0.05 where the trees score 0.29 |
+
+It is two shapes in one courtyard on one sheet, and every fix tried so far costs
+more of the building than it saves. Left as it is, on purpose, and recorded here
+so the next person does not repeat the search.
 
 ## Routing
 

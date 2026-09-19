@@ -6,8 +6,9 @@
 //
 // The dialog says what the key looks like before you type. That is not a leak —
 // the shape of a string narrows a SHA-256 preimage search by nothing — and
-// without it the editor who typed CHAP-COURT-1976 has no way to learn that the
-// key is lowercase.
+// without it an editor who typed their key in capitals has no way to learn that
+// it is lowercase. It describes the shape only; see EDIT_KEY_FORMAT in
+// lib/access.ts for why it must not claim to know more than that.
 
 import { useEffect, useId, useRef, useState } from "react";
 import { EDIT_KEY_FORMAT, looksLikeKey, unlockWithKey } from "../lib/access";
@@ -71,6 +72,8 @@ export default function EditorKeyDialog({ unlocked, onUnlock, onLock }: Props) {
         title={unlocked ? "Editing unlocked — click to lock again" : "Editor sign-in"}
         aria-label={unlocked ? "Lock the editing tools" : "Unlock the editing tools"}
       >
+        {/* Labelled, not just a glyph. A bare pencil in the corner of a map is
+            as likely to be read as "draw on the map" as "sign in to edit". */}
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
           <path
             d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z"
@@ -81,6 +84,7 @@ export default function EditorKeyDialog({ unlocked, onUnlock, onLock }: Props) {
           />
           <path d="M14.5 6.5l3 3" fill="none" stroke="currentColor" strokeWidth="1.9" />
         </svg>
+        <span className="pencil-label">{unlocked ? "Editing" : "Edit"}</span>
       </button>
 
       {open && (

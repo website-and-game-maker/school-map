@@ -43,17 +43,16 @@ export default function App() {
   const markCount = useMemo(() => stairMarks(floors).length, [floors]);
   const [floorId, setFloorId] = useState<FloorId>("main");
 
-  // How much 3D, 0..1. See three/units.ts. This is one dial, not two view
-  // modes: the 2D renderer is what the flat end of it looks like, and the app
-  // swaps to it there because that end is also where editing happens.
+  // Camera tilt, 0..1: 0 looks straight down, 1 looks across. See three/units.ts.
+  // It moves the camera and nothing else — the storey stack is always open.
   //
-  // It starts at BUILDING, so the first thing anyone sees is the building. A
-  // flat plan of a three-storey school does not tell you it has three storeys,
-  // and that is the single most common thing people get wrong about this place.
-  const [dimension, setDimension] = useState(0.5);
+  // Starts tilted, so the first thing anyone sees is a building with three
+  // floors in it. A flat plan of a three-storey school does not tell you it has
+  // three storeys, and that is the single most common thing people get wrong
+  // about this place.
+  const [dimension, setDimension] = useState(0.55);
   const [showStairColumns, setShowStairColumns] = useState(true);
   const [placements, setPlacements] = useState(initialPlacements);
-  const view: "2d" | "3d" = dimension <= 0.001 ? "2d" : "3d";
 
   const [fromQuery, setFromQuery] = useState("Chap Court Entrance (C)");
   const [toQuery, setToQuery] = useState("");
@@ -61,10 +60,9 @@ export default function App() {
   const [toItem, setToItem] = useState<SearchItem | null>(null);
 
   const [editMode, setEditMode] = useState(false);
-  // Editing happens on the flat plan: the SVG overlay that carries the points,
-  // the drag handles and the click targets is a 2D thing. Turning editing on
-  // therefore runs the dial down to 0 rather than refusing the two to coexist.
-  const [dimensionBeforeEdit, setDimensionBeforeEdit] = useState(0.5);
+  // Editing is the one thing that needs the flat renderer: the points, the drag
+  // handles and the click targets live in an SVG overlay, which is a 2D thing.
+  const view: "2d" | "3d" = editMode ? "2d" : "3d";
   // Null until the check resolves, so the editing tools never flash up for a
   // visitor while an async check is still in flight.
   const [canEdit, setCanEdit] = useState<boolean | null>(null);
@@ -278,15 +276,7 @@ export default function App() {
   // ---------------- edit mode ----------------
 
   function toggleEditMode() {
-    setEditMode((on) => {
-      if (!on) {
-        setDimensionBeforeEdit(dimension);
-        setDimension(0);
-      } else {
-        setDimension(dimensionBeforeEdit);
-      }
-      return !on;
-    });
+    setEditMode((on) => !on);
     setSelectedId(null);
     setTool("select");
   }
@@ -471,9 +461,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* One dial from a flat plan to an exploded stack, instead of two view
-          modes. The interesting positions are the ones in between. */}
-      <DimensionSlider value={dimension} onChange={setDimension} disabled={editMode} />
+
 
       {!editMode && (
         <>
@@ -608,21 +596,6 @@ export default function App() {
         </>
       )}
 
-      <div className="field">
-        <label>Floor</label>
-        <div className="floor-tabs">
-          {FLOOR_ORDER.map((f) => (
-            <button
-              key={f}
-              className={`floor-tab${floorId === f ? " active" : ""}`}
-              onClick={() => switchFloor(f)}
-            >
-              {FLOOR_LABELS[f].replace(" Level", "")}
-              {segments.some((s) => s.floor === f) && <span className="route-dot" />}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {canEdit && (
         <div className="field edit-toggle-row">
@@ -818,24 +791,56 @@ export default function App() {
 
       {!editMode && (
         <div className="roadmap">
-          <p className="roadmap-title">Still rough / coming later</p>
-          <ul>
-            <li>
-              Stairwells aren't marked on the plan, and they're not something the scan can be read
-              for — mark them in Edit mode and cross-floor routes become exact.
+          <p className="roadmap-title">What this map knows</p>
+
+          {/* Three rows, each one a claim about accuracy with a status you can
+              read at a glance. The previous version was a bulleted paragraph,
+              which buried the useful part: WHICH bits are solid and which are
+              guesses. */}
+          <ul className="status-list">
+            <li className="status-row good">
+              <span className="status-dot" aria-hidden="true" />
+              <div>
+                <strong>Room positions</strong>
+                <span>
+                  Read off the official plan by machine, number and all. The rest were traced by
+                  eye and are tagged as such in the data.
+                </span>
+              </div>
             </li>
-            <li>Restrooms aren't on the plan either — mark those the same way.</li>
-            <li>
-              How the three floors line up is fitted from a handful of shared entrances and is out
-              by 10–51 ft. Slide the dial to <strong>Exploded</strong> and the stairwell columns
-              show you where: a column that leans is a floor that needs nudging.
+            <li className="status-row warn">
+              <span className="status-dot" aria-hidden="true" />
+              <div>
+                <strong>How the floors line up</strong>
+                <span>
+                  Fitted from a handful of shared entrances, so it is out by 10–51&nbsp;ft. Tilt the
+                  view and watch the stairwell columns: one that leans is a floor that needs
+                  nudging.
+                </span>
+              </div>
             </li>
-            <li>Photo walkthroughs, live hallway traffic, class/teacher search.</li>
+            <li className="status-row missing">
+              <span className="status-dot" aria-hidden="true" />
+              <div>
+                <strong>Stairs, lifts and restrooms</strong>
+                <span>
+                  Not drawn on the plan at all, so cross-floor routes are approximate. They get
+                  marked by hand.
+                </span>
+              </div>
+            </li>
           </ul>
+
+          <p className="roadmap-title">Coming later</p>
+          <ul className="chip-list">
+            <li>Fly the route</li>
+            <li>Class schedule routing</li>
+            <li>Teacher search</li>
+            <li>Photo walkthroughs</li>
+          </ul>
+
           <p className="disclaimer">
-            Most room positions are now read off the official floor plan by machine, number and
-            all; the rest were traced by eye and are marked as such in the data. Distances are
-            estimates from a single scale constant either way.
+            Distances and times are estimates from a single scale constant.
           </p>
         </div>
       )}
@@ -927,10 +932,28 @@ export default function App() {
           </div>
         )}
 
-        <div className="map-badge">
-          {FLOOR_LABELS[floorId]}
-          {destLabel && !editMode && <span className="map-badge-dest">→ {destLabel}</span>}
+        {/* The floor picks itself — from the route you asked for, and from the
+            storey you orbit onto. This is the readout for that, stacked in the
+            order the floors actually are, and you can still override it. */}
+        <div className="floor-stack" role="group" aria-label="Floor">
+          {[...FLOOR_ORDER].reverse().map((f) => (
+            <button
+              key={f}
+              className={`floor-chip${floorId === f ? " active" : ""}`}
+              onClick={() => switchFloor(f)}
+              aria-pressed={floorId === f}
+            >
+              {FLOOR_LABELS[f].replace(" Level", "")}
+              {segments.some((s) => s.floor === f) && <span className="route-dot" />}
+            </button>
+          ))}
         </div>
+
+        {destLabel && !editMode && <div className="map-badge">→ {destLabel}</div>}
+
+        {!editMode && (
+          <DimensionSlider value={dimension} onChange={setDimension} />
+        )}
       </main>
 
       {/* One panel: a sidebar on a laptop, a bottom sheet over the map on a

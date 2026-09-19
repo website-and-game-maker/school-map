@@ -21,12 +21,12 @@ import { FLOOR_ORDER } from "../data/floors";
 
 import {
   FLOOR_INDEX,
-  GROUND_Y,
+  SPREAD,
   elevationForDimension,
   ghostOpacityForDimension,
-  spreadForDimension,
   storeyY,
 } from "./units";
+import { buildApron, buildSite, type Site } from "./site";
 import { buildStairColumns, type StairColumns } from "./stairColumns";
 import { type PlacementSet } from "./placement";
 import { buildWallGeometry, buildWallTopEdges } from "./walls";
@@ -49,11 +49,8 @@ export interface Viewer3DProps {
   stairs: StairLink[];
   activeFloor: FloorId;
   /**
-   * The 3D dial, 0..1. See units.ts: 0 is a flat plan, 0.5 the building at its
-   * real storey spacing, 1 the exploded stack. It owns the vertical system —
-   * the stack no longer changes shape on its own as you orbit, because a model
-   * that reshapes itself for reasons the user cannot see is a model they stop
-   * trusting.
+   * The tilt dial, 0..1: 0 looks straight down, 1 looks across. See units.ts.
+   * It moves the camera and nothing else — the storey stack is always open.
    */
   dimension: number;
   /** Draw the coloured columns tying each stairwell through the storeys. */
@@ -127,8 +124,10 @@ export class MapViewer3D {
   private reducedMotion = prefersReducedMotion();
   private coarse = isCoarsePointer();
 
-  private spread: number;
-  private targetSpread: number;
+  /** Fixed: the stack is always open. See units.ts. */
+  private readonly spread = SPREAD;
+  private site: Site | null = null;
+  private apron: { mesh: THREE.Mesh; dispose(): void } | null = null;
   private stairColumns: StairColumns | null = null;
   private builtColumnSpread = -1;
   private builtColumnKey = "";
@@ -152,8 +151,6 @@ export class MapViewer3D {
     this.props = props;
     this.cb = cb;
     this.placements = props.placements;
-    this.spread = spreadForDimension(props.dimension);
-    this.targetSpread = this.spread;
 
     const w = Math.max(1, host.clientWidth);
     const h = Math.max(1, host.clientHeight);
@@ -199,6 +196,7 @@ export class MapViewer3D {
     this.setupGround();
 
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
+    this.setupApron();
     this.applyFloorStates();
     this.syncStairColumns();
     this.syncRoute();
@@ -293,15 +291,31 @@ export class MapViewer3D {
   }
 
   private setupGround(): void {
-    // No grid helper — a grid is the tell of a default demo, and the building's
-    // own cast shadow is a better ground cue.
-    const g = new THREE.PlaneGeometry(4000, 4000);
-    const ground = new THREE.Mesh(g, this.materials.ground);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = GROUND_Y;
-    ground.receiveShadow = !this.coarse;
-    ground.name = "ground";
-    this.scene.add(ground);
+    // Sky, horizon and a ground that fades into it. See site.ts for why the
+    // model needs a world around it rather than a flat void.
+    this.site = buildSite({ shadows: !this.coarse });
+    this.scene.background = this.site.background;
+    for (const o of this.site.objects) this.scene.add(o);
+  }
+
+  /**
+   * Lay the building's footprint on the ground under the stack.
+   *
+   * Built after the storeys, because it reuses the lowest one's slab outline —
+   * the apron has to be the building's real shape or it reads as a rug rather
+   * than as the site the building stands on.
+   */
+  private setupApron(): void {
+    if (this.apron) {
+      this.scene.remove(this.apron.mesh);
+      this.apron.dispose();
+      this.apron = null;
+    }
+    const lower = this.floorParts.get("lower");
+    const slab = lower?.slab.geometry;
+    if (!slab) return;
+    this.apron = buildApron(slab);
+    this.scene.add(this.apron.mesh);
   }
 
   private ensureFloor(floor: FloorId): FloorParts {
@@ -473,6 +487,7 @@ export class MapViewer3D {
     }
     this.floorParts.clear();
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
+    this.setupApron();
     this.applyFloorStates();
     for (const f of FLOOR_ORDER) void this.loadFloorTexture(f);
     this.builtColumnSpread = -1;
@@ -689,34 +704,6 @@ export class MapViewer3D {
     this.invalidate();
   }
 
-  /**
-   * Pull back far enough that the whole stack is still in shot.
-   *
-   * Opening the dial from Building to Exploded takes the model from 32 ft tall
-   * to 220 ft tall; at a fixed camera distance the Upper level simply leaves the
-   * frame. This only ever moves the camera OUTWARD, so it rescues that case
-   * without undoing a zoom the user chose themselves.
-   */
-  private ensureStackFits(): void {
-    const target = this.controls.target;
-    const offset = new THREE.Vector3().subVectors(this.camera.position, target);
-    const dist = offset.length();
-    const parts = this.floorParts.get("main");
-    const r = parts?.walls.geometry.boundingSphere?.radius ?? 600;
-    const reach = Math.max(r, r * 0.85 + this.targetSpread * 0.9);
-    const want = clamp(
-      (reach * 1.12) / Math.tan((CAMERA.fov * Math.PI) / 360),
-      CAMERA.minDistance,
-      CAMERA.maxDistance
-    );
-    if (want <= dist + 1) return;
-    this.cameraDriven = true;
-    this.camera.position.copy(target).addScaledVector(offset.normalize(), want);
-    this.controls.update();
-    this.cameraDriven = false;
-    this.invalidate();
-  }
-
   private placeCamera(target: THREE.Vector3, dist: number, elevDeg: number, azDeg: number): void {
     const el = (elevDeg * Math.PI) / 180;
     const az = (azDeg * Math.PI) / 180;
@@ -745,9 +732,12 @@ export class MapViewer3D {
     }
 
     if (prev.dimension !== next.dimension) {
-      this.targetSpread = spreadForDimension(next.dimension);
+      // Camera only. The one thing that follows the dial besides the camera is
+      // how far the unfocused storeys fade, and that is a consequence of the
+      // angle: looking straight down they would sit on top of the floor being
+      // read.
       this.tiltTo(elevationForDimension(next.dimension));
-      this.ensureStackFits();
+      this.applyFloorStates();
       this.invalidate();
     }
 
@@ -790,24 +780,6 @@ export class MapViewer3D {
     const dt = this.lastTime ? Math.min(0.05, (time - this.lastTime) / 1000) : 0;
     this.lastTime = time;
 
-    // The stack follows the dial, not the camera. Easing it rather than
-    // snapping is what makes the slider feel like it is opening a physical
-    // thing: you can watch a room stay put while the floor above lifts off it.
-    if (Math.abs(this.targetSpread - this.spread) > 0.01) {
-      // ~0.25s time constant, so it never jitters while the slider is dragged.
-      const previous = this.spread;
-      this.spread += (this.targetSpread - this.spread) * Math.min(1, dt / 0.25);
-      if (Math.abs(this.targetSpread - this.spread) <= 0.01) this.spread = this.targetSpread;
-      // Keep the orbit target glued to the storey in focus, or the model slides
-      // out from under the camera as the stack opens.
-      this.controls.target.y += storeyY(this.props.activeFloor, this.spread)
-        - storeyY(this.props.activeFloor, previous);
-      this.applyFloorStates();
-      this.syncStairColumns();
-      if (Math.abs(this.builtRouteSpread - this.spread) > 0.5) this.syncRoute();
-      this.dirty = true;
-    }
-
     const animating = this.routeObject !== null && !this.reducedMotion;
     if (animating) this.routeObject?.update(dt);
 
@@ -843,6 +815,17 @@ export class MapViewer3D {
       this.stairColumns.dispose();
       this.stairColumns = null;
     }
+    if (this.apron) {
+      this.scene.remove(this.apron.mesh);
+      this.apron.dispose();
+      this.apron = null;
+    }
+    if (this.site) {
+      for (const o of this.site.objects) this.scene.remove(o);
+      this.site.dispose();
+      this.site = null;
+    }
+    this.scene.background = null;
     for (const parts of this.floorParts.values()) {
       this.scene.remove(parts.group);
       for (const o of parts.owned) o.dispose();
