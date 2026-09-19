@@ -45,100 +45,50 @@ export const SLAB_THICKNESS = 2.5;
 export const GROUND_Y = -8;
 
 // ---------------------------------------------------------------------------
-// The 3D dial.
+// The tilt dial.
 //
-// One number, 0..1, runs the whole vertical system, and the slider in the UI is
-// that number. It replaces a pair of view modes ("2D Plan" / "3D View") that
-// were really the two ends of one continuum, and an implicit rule where the
-// stack silently exploded as you orbited upward — which meant the model changed
-// shape under you for reasons nobody could see or control.
+// One number, 0..1, and it does exactly one thing: it swings the camera between
+// looking straight down and looking across. Nothing else about the model moves.
 //
-// The three landmarks along the dial each answer a different question:
-//
-//   0.0  FLAT      one storey, straight down. "Where is 214 on this floor?"
-//   0.5  BUILDING  the storeys at their real 16 ft spacing, tilted. "What does
-//                  this place actually look like, and what is above me?"
-//   1.0  EXPLODED  the storeys pulled far apart. "How do these three floors
-//                  line up, and where does this stairwell come out?"
-//
-// The middle is the honest one and the ends are both useful lies: at 0 the
-// building is not flat, and at 1 the floors are not 110 ft apart. Spelling the
-// dial out like this is the point — a reader who can slide between them learns
-// the layering in a way no static picture teaches.
+// It used to also open and close the storey stack, on the theory that a flat
+// plan and an exploded diagram were two ends of one continuum. They are, but
+// tying them to one control meant the building changed shape while you were
+// trying to change your viewpoint, and a model that reshapes itself under you
+// is a model you stop trusting. So the stack is simply always open, and the
+// dial is a camera control.
 
-/** Storeys at their real spacing. Matches FLOOR_HEIGHT in directions.ts. */
-export const SPREAD_COMPACT = 16;
-// 40 ft was not enough. On a building 1200 ft across, three storeys that close
-// together read as one surface from any sensible camera angle: you see Main's
+// Storey separation, fixed. On a building 1200 ft across, three storeys any
+// closer than this read as one surface from any sensible angle: you see Main's
 // 2xx room numbers and Upper's 3xx numbers side by side and assume they are on
 // the same floor. At 110 ft the trays are unmistakably separate and it is still
 // only 9% of the building's width, so it never reads as a tower.
-export const SPREAD_EXPLODED = 110;
+export const SPREAD = 110;
 
-/** Where "BUILDING" sits on the dial. Below it the stack closes toward flat. */
-const DIM_BUILDING = 0.5;
+/** Matches FLOOR_HEIGHT in directions.ts — the storeys' real spacing. */
+export const SPREAD_COMPACT = 16;
 
-const smooth = (t: number) => t * t * (3 - 2 * t);
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
 
-/**
- * Storey separation for a dial position.
- *
- * Two segments, because the two halves of the dial are doing different jobs:
- * below BUILDING the stack is closing up toward a single readable plane, above
- * it the stack is opening into a diagram.
- */
-export function spreadForDimension(dim: number): number {
-  const d = clamp01(dim);
-  if (d <= DIM_BUILDING) {
-    return SPREAD_COMPACT * smooth(d / DIM_BUILDING);
-  }
-  const t = smooth((d - DIM_BUILDING) / (1 - DIM_BUILDING));
-  return SPREAD_COMPACT + (SPREAD_EXPLODED - SPREAD_COMPACT) * t;
-}
-
-/**
- * Camera elevation above the horizon for a dial position, in degrees.
- *
- * Straight down at 0 so the flat end really is a plan. It does not fall
- * monotonically to the horizon, though: a fully exploded stack viewed from low
- * down is three trays edge-on, hiding each other. So the tilt bottoms out around
- * the BUILDING mark and comes back up for the exploded end, which is where you
- * need to see *into* each tray.
- */
+/** Camera elevation above the horizon, in degrees. 0 = plan, 1 = across. */
 export function elevationForDimension(dim: number): number {
-  const d = clamp01(dim);
-  if (d <= DIM_BUILDING) {
-    // 90° (straight down) -> 32° (an architectural three-quarter view)
-    return 90 - 58 * smooth(d / DIM_BUILDING);
-  }
-  // 32° -> 40°. Only a little: elevation is a trade here, because looking down
-  // more steeply is what lets you see into each tray and is also what squashes
-  // the gaps between them. 40° keeps the three trays visibly apart while still
-  // showing their floors.
-  return 32 + 8 * smooth((d - DIM_BUILDING) / (1 - DIM_BUILDING));
+  // Linear on purpose. Easing this was tried and makes the slider feel like it
+  // sticks at the ends, which on a control whose whole job is "how tilted"
+  // reads as a bug rather than as polish.
+  return 90 - 65 * clamp01(dim);
 }
 
 /**
  * How much the unfocused storeys fade.
  *
- * Two things pull in opposite directions. Near the flat end the storeys sit on
- * top of each other, so a visible neighbour turns the floor you are reading to
- * mush — they have to disappear. Near the exploded end they are far apart and
- * are the entire point of the view, so they need to be solid enough to read.
+ * Looking straight down, three storeys 110 ft apart project onto exactly the
+ * same place, so a visible neighbour turns the floor you are reading to mush.
+ * They have to disappear at the plan end. Tilt away and they separate, and then
+ * they are the entire point of the view, so they come back.
  */
 export function ghostOpacityForDimension(dim: number): number {
-  const d = clamp01(dim);
-  const fadeIn = smooth(Math.min(1, d / 0.22));
-  const open = smooth(clamp01((d - DIM_BUILDING) / (1 - DIM_BUILDING)));
-  return (0.4 + 0.35 * open) * fadeIn;
+  const t = clamp01((clamp01(dim) - 0.12) / 0.3);
+  return 0.72 * (t * t * (3 - 2 * t));
 }
-
-export const DIMENSION_STOPS = [
-  { at: 0, label: "Flat" },
-  { at: DIM_BUILDING, label: "Building" },
-  { at: 1, label: "Exploded" },
-] as const;
 
 /** World Y of a storey's slab top. */
 export function storeyY(floor: FloorId, spread: number): number {

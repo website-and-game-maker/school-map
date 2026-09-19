@@ -50,6 +50,9 @@ export interface RoomsFile {
 interface WallsLite {
   quant: number;
   boxes: number[];
+  /** Smoothed wall polygons. See tools/export_walls.py: the boxes are for the
+   *  3D extrusion, these are for drawing. */
+  outlines?: number[][];
   footprint: { outer: number[]; holes: number[][] }[];
 }
 
@@ -148,11 +151,28 @@ export function renderFloorPlan(floor: FloorId, opts: FloorPlanOptions): HTMLCan
   }
 
   // Walls last, over everything, so a room never bleeds across a partition.
+  //
+  // Drawn as polygons where we have them. The quantised boxes are the fallback
+  // and they are visibly stepped at this scale: a plan drawn in 2px squares
+  // reads as a rendering bug rather than as a floor plan.
   ctx.fillStyle = INK.wall;
-  const q = walls.quant;
-  const b = walls.boxes;
-  for (let i = 0; i < b.length; i += 4) {
-    ctx.fillRect(b[i] * q, b[i + 1] * q, b[i + 2] * q, b[i + 3] * q);
+  if (walls.outlines && walls.outlines.length) {
+    ctx.beginPath();
+    for (const poly of walls.outlines) {
+      if (poly.length < 6) continue;
+      ctx.moveTo(poly[0], poly[1]);
+      for (let i = 2; i < poly.length; i += 2) ctx.lineTo(poly[i], poly[i + 1]);
+      ctx.closePath();
+    }
+    // Non-zero winding: trace_loops gives holes the opposite winding to their
+    // outer ring, so a courtyard inside a wall block stays hollow.
+    ctx.fill("nonzero");
+  } else {
+    const q = walls.quant;
+    const b = walls.boxes;
+    for (let i = 0; i < b.length; i += 4) {
+      ctx.fillRect(b[i] * q, b[i + 1] * q, b[i + 2] * q, b[i + 3] * q);
+    }
   }
 
   if (labels) {

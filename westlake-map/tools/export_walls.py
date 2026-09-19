@@ -29,6 +29,7 @@ Outputs src/data/floors/walls-{floor}.json. Run from the repo root:
     /opt/homebrew/bin/python3 tools/export_walls.py --render   # + verification PNGs
 """
 import json
+import math
 import os
 import sys
 import time
@@ -276,7 +277,13 @@ def drop_blobs(mask, verbose=False):
         w = sl[1].stop - sl[1].start
         area = int(sizes[i])
         elong = max(h, w) / max(1, min(h, w))
-        fill = area / max(1, h * w)
+        # Fill is measured on the component with its holes filled, not on the
+        # ink. A tree is drawn as a RING, so its ink covers only a fifth of its
+        # bounding box and it used to pass this test as "not solid" — while the
+        # thing the test is trying to describe, "a compact lump sitting on its
+        # own", is exactly what a filled ring is.
+        solidified = ndi.binary_fill_holes(lab[sl] == i + 1)
+        fill = int(solidified.sum()) / max(1, h * w)
         if elong < BLOB_ELONG and area < BLOB_AREA and fill > BLOB_FILL:
             kill.append(i + 1)
     if not kill:
@@ -289,25 +296,108 @@ def drop_blobs(mask, verbose=False):
     return out
 
 
-def wall_mask(inside, lines, verbose=True):
-    """Keep long straight ink; throw away text, symbols and hatching.
+# A space has to be at least this big to count as a room or a corridor, which
+# is what makes it able to have a wall between it and its neighbour. Matches
+# MIN_ROOM_PX in export_rooms.py on purpose: the two files should not disagree
+# about what a space is.
+MIN_SPACE_PX = 600
+# How far apart two spaces may be and still have a wall between them. Sized to
+# the thickest wall on these sheets; larger and a door swing drawn across a
+# corner starts to "separate" the room from the corridor it opens onto.
+SEPARATOR_WIN = 11
+# Put the wall's core back after classification. The window test only marks ink
+# that is close to BOTH spaces, so the middle of a thick wall comes out hollow.
+SOLIDIFY = 2
+# Bridge the one- and two-pixel breaks the scan leaves along a wall. Kept well
+# below a doorway's width (15-25 px) so real openings stay open -- the plans
+# draw doors closed, and a doorway drawn as a gap is a doorway, not a defect.
+HEAL_SMALL = 5
 
-    The opening alone is not enough: 31px still passes the stem of a tall letter,
-    and the heal then welds that stub onto a nearby wall. So the skeleton is
-    size-filtered *before* the restore, while the stubs are still isolated, and
-    again after.
+
+def separator_walls(inside, free, page_fp, st, verbose=True):
+    """A wall is ink with a different space on each side of it.
+
+    KNOWN GAP, measured, so nobody repeats the search: Chap Court's planting
+    still comes out as wall. A tree is drawn as a scalloped ring and the inside
+    of that ring is a genuine pocket of free space, so the ring really does
+    separate two spaces and this test keeps it, correctly by its own lights.
+    Four ways of telling it from a wall were tried and each one fails on
+    measurements from these sheets:
+
+      * component shape (the filter this file already has for shrubs): the
+        planting is welded into the courtyard edging at every stage of the
+        mask, so it is never the free-floating blob that filter needs;
+      * a bigger cap for that filter, on the theory that the planting is just a
+        large blob: the clump is 47k px, and a cap that admits it also drops
+        149k px of real wall;
+      * boundary straightness: tree pockets average a 10.4 px edge and real
+        small rooms run 7.7-9.4, so no threshold separates them;
+      * axis alignment: the Black Box / Sub-Varsity wing is drawn at 45 degrees
+        and scores 0.05 where the trees score 0.29.
+
+    It is two shapes in one courtyard on one sheet, and every fix tried so far
+    costs more of the building than it saves.
+
+
+    This is the definition, and everything the old one got wrong follows from
+    it not having one. Before this, a wall was "a long straight run of ink",
+    separated from annotation by a multi-orientation line opening. That test
+    cannot tell a wall from anything else long and straight, and these drawings
+    are full of long straight things that are not walls:
+
+      * door leaves and their swing arcs, which is why every door on the
+        published map was drawn standing open,
+      * the fixtures and partitions inside the small suites, which came out as
+        a field of fragments nobody could read,
+      * the room numbers themselves, whose stems pass a 31px opening.
+
+    Each of those sits INSIDE one space. A wall, by contrast, has a room on one
+    side and a corridor on the other. So: label the free space, throw away the
+    pockets too small to be a room, and mark the ink that has two different
+    surviving labels within SEPARATOR_WIN. A door arc is near exactly one room
+    and vanishes; a wall is near two and stays.
+
+    The one subtlety is the size filter, and it is not an arbitrary threshold.
+    The counter of a printed "0" is a pocket of free space too — the ring of the
+    glyph genuinely does separate the inside of the 0 from the room around it —
+    so without a minimum size the digits with closed loops survive as little
+    rings. Requiring a space to be room-sized removes them by saying what we
+    actually mean: a wall divides places you can stand.
     """
-    lines = drop_small(lines, MIN_BLOB_PX // 3, MIN_BLOB_DIM)
-    restored = ndi.binary_dilation(
-        lines, np.ones((3, 3)), iterations=RESTORE_ITERS) & inside
-    restored = drop_blobs(restored, verbose)
-    healed = ndi.binary_closing(restored, structure=np.ones((HEAL, HEAL))) & inside
-    healed = drop_small(healed, MIN_BLOB_PX, MIN_BLOB_DIM)
+    lab, n = ndi.label(free, structure=np.ones((3, 3)))
+    sizes = np.bincount(lab.ravel(), minlength=n + 1)
+    h, w = lab.shape
+
+    big = sizes >= MIN_SPACE_PX
+    big[0] = False
+
+    spaces = np.where(big[lab], lab, 0).astype(np.int32)
+    # Outside the storey is a space as well — it is what the exterior wall has
+    # on its far side, and without it the whole perimeter fails the test.
+    outside = np.int32(n + 1)
+    spaces[~st] = outside
+    spaces[~page_fp] = outside
+
+    sentinel = np.iinfo(np.int32).max
+    lo = ndi.minimum_filter(np.where(spaces > 0, spaces, sentinel), size=SEPARATOR_WIN)
+    hi = ndi.maximum_filter(np.where(spaces > 0, spaces, 0), size=SEPARATOR_WIN)
+    sep = inside & (lo != sentinel) & (hi != 0) & (lo != hi)
+
+    if SOLIDIFY:
+        sep = ndi.binary_dilation(sep, np.ones((3, 3)), iterations=SOLIDIFY) & inside
+
+    # Blobs first, closing second, and the order is load-bearing: the closing
+    # welds a shrub onto the wall it is standing next to, and once welded it is
+    # part of the building's one big component and no per-component test can
+    # see it any more.
+    walls = drop_blobs(sep, verbose)
+    walls = ndi.binary_closing(walls, structure=np.ones((HEAL_SMALL, HEAL_SMALL))) & inside
+    walls = drop_small(walls, MIN_BLOB_PX, MIN_BLOB_DIM)
     if verbose:
         ni = max(1, int(inside.sum()))
-        log(f'    storey ink {ni}  skeleton {100*lines.sum()/ni:.1f}%  '
-            f'restored {100*restored.sum()/ni:.1f}%  walls {100*healed.sum()/ni:.1f}%')
-    return healed
+        log(f'    storey ink {ni}  spaces {int(big.sum())}  '
+            f'separators {100*sep.sum()/ni:.1f}%  walls {100*walls.sum()/ni:.1f}%')
+    return walls
 
 
 # ---------------------------------------------------------------- stage 5 ----
@@ -430,24 +520,165 @@ def dp_simplify(pts, tol):
     return [pts[i] for i in np.flatnonzero(keep)]
 
 
-def storey_footprint(walls):
+# --- smoothing: turn a pixel boundary back into drawn lines -------------------
+# The mask's boundary is rectilinear by construction — every step is one pixel,
+# so a wall that the scanner nudged half a pixel comes out of trace_loops as a
+# staircase. Drawing that literally is what made the published map look
+# pixelated. These two numbers undo it.
+SMOOTH_TOL = 2.2      # px a vertex may move during Douglas-Peucker
+SNAP_DEG = 7.0        # an edge this close to an axis or a 45 is made exact
+MERGE_DEG = 8.0       # consecutive edges within this of each other become one
+MIN_EDGE = 3.0        # px; shorter edges are jitter, not corners
+
+
+def _snap_angle(dx, dy):
+    """Nearest of the eight cardinal/diagonal directions, if one is close."""
+    ang = math.degrees(math.atan2(dy, dx))
+    for target in range(-180, 181, 45):
+        if abs((ang - target + 180) % 360 - 180) <= SNAP_DEG:
+            r = math.radians(target)
+            return math.cos(r), math.sin(r)
+    return None
+
+
+def straighten(ring):
+    """Simplify a traced ring into clean lines, ignoring scanner bumps.
+
+    Three passes, each doing one job:
+
+      1. Douglas-Peucker, to drop the single-pixel staircase steps.
+      2. Merge runs of edges that point the same way. A long wall that the scan
+         bent by a couple of degrees halfway along arrives as two edges; this is
+         the pass that answers "if a line is straight and gets bumped, ignore
+         the bump".
+      3. Snap near-axis edges to exactly axial and re-cut the corners as the
+         intersection of the snapped lines. The building is drawn on a square
+         grid, so an edge 2 degrees off vertical is a scanning artefact every
+         time, and leaving it off-square is what reads as wobble.
+    """
+    pts = dp_simplify(list(ring) + [ring[0]], SMOOTH_TOL)
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        return []
+
+    # --- 2: merge near-parallel neighbours -----------------------------------
+    n = len(pts)
+    merged = []
+    i = 0
+    while i < n:
+        a = pts[i]
+        j = (i + 1) % n
+        b = pts[j]
+        adv = 1
+        while adv < n:
+            k = (i + adv + 1) % n
+            c = pts[k]
+            a1 = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
+            a2 = math.degrees(math.atan2(c[1] - b[1], c[0] - b[0]))
+            if abs((a1 - a2 + 180) % 360 - 180) > MERGE_DEG:
+                break
+            b = c
+            adv += 1
+        merged.append(a)
+        i += adv
+        if len(merged) > n:
+            break
+    pts = merged if len(merged) >= 3 else pts
+
+    # --- 3: snap to the drawing's own grid, then re-cut the corners ----------
+    m = len(pts)
+    lines = []          # (point on line, unit direction)
+    for i in range(m):
+        a = pts[i]
+        b = pts[(i + 1) % m]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy)
+        if L < 1e-9:
+            lines.append(None)
+            continue
+        snapped = _snap_angle(dx, dy)
+        ux, uy = snapped if snapped else (dx / L, dy / L)
+        mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+        lines.append((mid, (ux, uy)))
+
+    out = []
+    for i in range(m):
+        cur = lines[i]
+        prev = lines[(i - 1) % m]
+        if cur is None or prev is None:
+            out.append(pts[i])
+            continue
+        (px, py), (pux, puy) = prev
+        (cx, cy), (cux, cuy) = cur
+        det = pux * (-cuy) - puy * (-cux)
+        if abs(det) < 1e-6:
+            out.append(pts[i])          # parallel: keep the traced corner
+            continue
+        rx, ry = cx - px, cy - py
+        t = (rx * (-cuy) - ry * (-cux)) / det
+        ix, iy = px + pux * t, py + puy * t
+        # A snapped corner that lands far from the traced one means the snap was
+        # wrong for this edge; trust the pixels rather than the grid.
+        if math.hypot(ix - pts[i][0], iy - pts[i][1]) > 6.0:
+            out.append(pts[i])
+        else:
+            out.append((ix, iy))
+
+    # drop the hairs left behind by snapping
+    clean = []
+    for pt in out:
+        if not clean or math.hypot(pt[0] - clean[-1][0], pt[1] - clean[-1][1]) >= MIN_EDGE:
+            clean.append(pt)
+    if len(clean) >= 3 and math.hypot(clean[0][0] - clean[-1][0],
+                                      clean[0][1] - clean[-1][1]) < MIN_EDGE:
+        clean.pop()
+    return clean if len(clean) >= 3 else []
+
+
+def wall_outlines(walls):
+    """Every wall boundary as a smoothed polygon, for the 2D map to draw.
+
+    The 3D view extrudes the quantised rectangles, which is the right shape for
+    a mesh. The 2D view should not: at map scale those rectangles are visibly
+    stepped, and a floor plan drawn in steps looks like a mistake rather than
+    like a plan.
+    """
+    out = []
+    for ring in trace_loops(walls):
+        poly = straighten(ring)
+        if len(poly) < 3:
+            continue
+        if abs(signed_area(poly)) < 24:
+            continue
+        out.append([int(round(v)) for xy in poly for v in xy])
+    return out
+
+
+def storey_footprint(walls, st):
     """Solid slab of the storey (one mask, possibly several detached wings).
 
-    Grown off the *wall* mask, so it follows the structure that survived rather
-    than any stray annotation the storey mask still carried.
+    Grown off the STOREY mask, not off the walls. It used to come from the
+    walls, which worked while a "wall" was a thick restored line-opening: the
+    dilate/fill/erode closed over the gaps and the result was the building.
+    Separator walls are thinner and sparser, and the same steps then read most
+    of the interior as "far from any wall" and carved it away as courtyard --
+    Upper came out as a single 76-point scrap instead of four wings.
+
+    The storey mask is the right base anyway: it already answers "which part of
+    this page is this floor", which is the question a footprint asks.
     """
-    fat = ndi.binary_dilation(walls, np.ones((3, 3)), iterations=SLAB_DILATE)
-    filled = ndi.binary_fill_holes(fat)
-    solid = ndi.binary_erosion(filled, np.ones((3, 3)), iterations=SLAB_DILATE)
-    # seal the channels the erosion cuts where a big room's wall ring has a gap
-    solid = ndi.binary_fill_holes(
-        ndi.binary_closing(solid, np.ones((3, 3)), iterations=SLAB_SEAL))
+    solid = ndi.binary_closing(st, np.ones((3, 3)), iterations=SLAB_SEAL)
+    solid = ndi.binary_fill_holes(solid)
     lab, n = ndi.label(solid)
     if n:
         sizes = ndi.sum(solid, lab, range(1, n + 1))
         solid = np.isin(lab, np.nonzero(sizes >= MIN_PART_PX)[0] + 1)
-    # re-open genuine courtyards that fill_holes closed
-    voids = solid & ~ndi.binary_dilation(walls, np.ones((3, 3)), iterations=4)
+    # Re-open the genuine courtyards the hole fill just closed. A courtyard is
+    # a large void with no walls in it; a big room is a large void WITH walls
+    # around and across it, which is why this is measured against the walls.
+    voids = solid & ~ndi.binary_dilation(walls, np.ones((3, 3)), iterations=SLAB_DILATE)
+    voids &= ~st          # a courtyard is not part of the storey to begin with
     lab, n = ndi.label(voids)
     if n:
         sizes = ndi.sum(voids, lab, range(1, n + 1))
@@ -525,7 +756,8 @@ def build(floor, verbose=True):
             f'{sum(1 for x,y in pts if st[min(h-1,int(y)), min(w-1,int(x))])}'
             f'/{len(pts)} known rooms')
 
-    walls = wall_mask(inside, lines & st, verbose=verbose)
+    free = (~ink) & page_fp & st
+    walls = separator_walls(inside, free, page_fp, st, verbose=verbose)
     before = int(walls.sum())
     walls = keep_networks(walls, pts)
     if verbose and walls.sum() != before:
@@ -538,14 +770,15 @@ def build(floor, verbose=True):
     full = np.kron(recon, np.ones((QUANT, QUANT), bool))[:walls.shape[0], :walls.shape[1]]
     inflate = 100.0 * full.sum() / max(1, walls.sum())
 
-    solid = storey_footprint(walls)
+    outlines = wall_outlines(walls)
+    solid = storey_footprint(walls, st)
     parts = footprint_parts(solid)
-    log(f'  {floor}: {len(boxes)} boxes, cells {cov:.1f}%, quantised area '
-        f'{inflate:.0f}% of wall px, footprint parts '
+    log(f'  {floor}: {len(boxes)} boxes, {len(outlines)} outlines, cells {cov:.1f}%, '
+        f'quantised area {inflate:.0f}% of wall px, footprint parts '
         f'{[(len(p["outer"]), [len(h) for h in p["holes"]]) for p in parts]} '
         f'({time.time()-t0:.1f}s)')
     return dict(grey=grey, ink=ink, storey=st, inside=inside, walls=walls,
-                cells=cells, boxes=boxes, solid=solid, parts=parts)
+                cells=cells, boxes=boxes, outlines=outlines, solid=solid, parts=parts)
 
 
 def write_json(floor, r):
@@ -560,6 +793,10 @@ def write_json(floor, r):
         'pxPerFoot': 2.6,
         'boxCount': len(r['boxes']),
         'boxes': flat,
+        # Drawn by the 2D map. The boxes above are for extrusion; these are the
+        # same walls as smooth polygons, because a plan drawn in quantised
+        # rectangles reads as pixelated at map scale.
+        'outlines': r['outlines'],
         'footprint': [
             {'outer': [int(v) for p in part['outer'] for v in p],
              'holes': [[int(v) for p in hole for v in p] for hole in part['holes']]}

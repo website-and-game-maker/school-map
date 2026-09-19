@@ -84,10 +84,31 @@ it before changing the extraction.
   the app's Edit mode, one marker per stairwell per floor — placing a second one
   nearby moves the first rather than adding a rival, so "which stairwell is this"
   always has one answer. Cross-floor routes are approximate until they are.
-- **The 2D and 3D views are one dial, not two modes.** `dimension` runs 0..1:
-  flat plan → building at real 16 ft spacing → exploded stack at 110 ft. The 2D
-  renderer is what the flat end looks like, and editing lives there because the
-  edit overlay is SVG. Do not reintroduce a 2D/3D toggle.
+- **The dial is camera tilt and nothing else.** `dimension` runs 0..1: 0 looks
+  straight down, 1 looks across. The storey stack is ALWAYS open at 110 ft. It
+  used to open and close the stack as well, and the flat end swapped to the 2D
+  renderer — so pushing the slider down jumped to a differently-scaled view of a
+  different thing. Do not make the dial change the model again, and do not
+  reintroduce a 2D/3D toggle. Editing is the one thing that uses the 2D
+  renderer, because the edit overlay is SVG.
+
+- **A wall is ink with a different space on each side of it.** Not "a long
+  straight run of ink" — that was the old definition and it drew every door
+  standing open, because a door leaf and its swing arc are long and straight.
+  The current rule is in `separator_walls()` in `tools/export_walls.py`; the
+  minimum space size (600 px) is what stops the counter of a printed `0` from
+  counting as a room. Read the docstring before changing it: it records the
+  courtyard-planting gap and the four approaches to it that were measured and
+  failed.
+
+- **The 2D map draws wall polygons, the 3D view extrudes the boxes.** Both ship
+  in `walls-*.json`. Drawing the quantised boxes in 2D is what made the map look
+  pixelated; `straighten()` is the pass that removes scanner bumps and snaps
+  near-axis edges to exact.
+
+- **The floor selector is automatic** — it follows the route and the storey the
+  camera is on. The chips on the map are a readout you can override, not the
+  main way in.
 
 - **The hand-drawn tour map** (`src/assets/tour-map*.jpg`, shown in the app) is a
   student's sketch, not a survey. It is a reference layer, never a data source
@@ -98,11 +119,17 @@ it before changing the extraction.
 
 Nearest in line, in order:
 
-1. **Work the scan-reader's review queue.** Edit mode lists every read the tool
+1. **Line up the colour-marked plan.** The owner is producing a copy of the
+   plan with clearer borders and with stairwells, lifts and restrooms marked in
+   colour. That copy is the answer to the two things the extraction genuinely
+   cannot do (stairs and restrooms are not on the official sheets at all), so
+   registering it against the existing scans and reading the colours off it is
+   the highest-value work outstanding. Nothing is built for it yet.
+2. **Work the scan-reader's review queue.** Edit mode lists every read the tool
    was not confident enough to apply, and eight rooms that were removed because
    the drawing positively contradicted them. Each is a couple of clicks. This is
    the highest-value use of ten minutes in the project.
-2. **Raise the reader's recall.** It reads 139 of ~215 rooms confidently. The
+3. **Raise the reader's recall.** It reads 139 of ~215 rooms confidently. The
    misses are mostly small subdivided suites (254x, 257x, 290x) where the text is
    below the glyph-size band, and rooms whose number touches a wall so it is not
    a *hole* in the pocket. A self-calibrating classifier — cluster the glyphs the
@@ -110,15 +137,15 @@ Nearest in line, in order:
    tesseract can read, then classify the rest by template — was prototyped and is
    the obvious next step; per-glyph OCR on isolated characters is not (it returns
    empty on 60% of them).
-3. **Fly-the-route camera and 3D labels** — both designed in detail, neither
+4. **Fly-the-route camera and 3D labels** — both designed in detail, neither
    built. The camera is specified as a low drone at ~22 ft, not a first-person
    walk: at eye height you see nothing but wall and lose the room numbers on the
    floor, which are the whole advantage.
-4. **Schedule-based routing.** Enter your class periods once and get the day's
+5. **Schedule-based routing.** Enter your class periods once and get the day's
    transitions. Page 2 of the tour map is exactly this, hand-drawn by a student,
    which is good evidence it is the feature that would make people who already
    know the building open the app.
-5. **Mobile route framing.** The 2D view aims a route at the strip of map the
+6. **Mobile route framing.** The 2D view aims a route at the strip of map the
    bottom sheet leaves visible; the 3D view centres on the whole canvas, so on a
    phone the lower part of a route can sit behind the sheet. The fix is to pass
    the sheet height into the viewer and use `camera.setViewOffset`.
@@ -131,6 +158,11 @@ Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
   measurements. What works is a per-component *shape* test applied before the
   heal, while the artefacts are still free-floating.
 - **"All Levels" layering.** Fixed by raising the storey spread to 110 ft.
+- **Doors drawn open, furniture noise, pixelated walls.** All three were the
+  same root cause — "a wall is a long straight run of ink" — and all three went
+  away with the separator definition above. Do not reach for a door-arc
+  detector; there is nothing to detect once walls are defined by what they
+  divide.
 
 ## Deployment
 

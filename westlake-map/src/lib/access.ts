@@ -29,15 +29,26 @@ const HASH = (import.meta.env.VITE_EDIT_KEY_SHA256 as string | undefined)?.trim(
 const STORAGE_KEY = "westlake-map:editor";
 
 /**
- * What to tell someone staring at an empty key box. Describing the SHAPE of the
- * key is not a leak — it narrows a brute force by nothing that matters against
- * SHA-256 — and without it the honest editor cannot tell "I mistyped" from
- * "I have the wrong key entirely".
+ * What to tell someone staring at an empty key box.
+ *
+ * Only the *shape* — lowercase words joined by hyphens — and only because that
+ * is the difference between "I mistyped" and "I have the wrong key entirely".
+ * Describing a shape narrows a SHA-256 preimage search by nothing that matters.
+ *
+ * An earlier version of this claimed the key began with "chap" and offered
+ * "chap-court-1976" as the example. Both were invented: nothing in this
+ * repository knows the key, only its hash, so the app is in no position to say
+ * what it starts with. Worse, the example named a real place in the building,
+ * which reads like a hint rather than like a format. The example is now
+ * obviously a placeholder, and the text no longer asserts anything the app
+ * cannot know.
  */
 export const EDIT_KEY_FORMAT = {
-  placeholder: "chap-xxxx-xxxx",
-  hint: "Three lowercase groups joined by hyphens, starting with “chap” — for example chap-court-1976. Case and hyphens both matter.",
-  pattern: /^[a-z0-9]+(-[a-z0-9]+){1,3}$/,
+  placeholder: "word-word-word",
+  hint: "Lowercase words joined by hyphens. It is case-sensitive and the hyphens count, so type it exactly as you were given it.",
+  // Loose on purpose: this only catches a pasted sentence or an empty box, not
+  // a wrong key. The hash check is what decides.
+  pattern: /^[a-z0-9]+(-[a-z0-9]+)+$/,
 } as const;
 
 /** Does this even look like a key? Cheap client-side sanity check, no crypto. */

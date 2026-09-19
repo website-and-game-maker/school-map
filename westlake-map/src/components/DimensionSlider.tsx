@@ -1,36 +1,39 @@
-// The 3D dial: one slider from a flat plan to an exploded stack.
+// The tilt dial: one vertical slider in the corner of the map.
 //
-// It replaces a "2D Plan / 3D View" pair of buttons. Those were not two
-// features — they were the two ends of one continuum, and presenting them as a
-// choice hid the interesting part, which is everything in between. The middle
-// of this slider is where you can see that the Cafeteria is directly under the
-// main corridor, and no toggle can show you that.
+// It lives on the map rather than in the panel because it is a camera control,
+// and camera controls belong next to the thing they aim. Vertical because what
+// it controls is vertical — push it up to stand the view up, pull it down to
+// look straight down — and putting the plan end at the bottom would invert that.
 //
-// The stops are labelled and clickable, because a bare slider does not tell you
-// what it does until you have already moved it, and because the three named
-// positions are genuinely the ones people want.
-
-import { DIMENSION_STOPS } from "../three/units";
+// Deliberately unlabelled beyond its two end icons. An earlier version had
+// named stops ("Flat / Building / Exploded") because the dial also opened and
+// closed the storey stack; now that it only tilts, stops would be three names
+// for three camera angles, which is three more words than the control needs.
 
 interface Props {
   value: number;
   onChange: (v: number) => void;
-  /** Editing works on the flat plan, so the dial is pinned there while it's on. */
+  /** Editing works on the flat plan, so the dial is hidden while it's on. */
   disabled?: boolean;
 }
 
-const NEAR = 0.06;
-
 export default function DimensionSlider({ value, onChange, disabled }: Props) {
   const pct = Math.round(value * 100);
-  const active = DIMENSION_STOPS.find((s) => Math.abs(s.at - value) < NEAR);
 
   return (
-    <div className={`dim-slider${disabled ? " disabled" : ""}`}>
-      <div className="dim-head">
-        <span className="dim-title">3D</span>
-        <span className="dim-now">{active ? active.label : `${pct}%`}</span>
-      </div>
+    <div className={`tilt-dial${disabled ? " disabled" : ""}`}>
+      <span className="tilt-icon" aria-hidden="true" title="Tilted view">
+        <svg viewBox="0 0 20 20" width="15" height="15">
+          <path
+            d="M2 13.5 L10 9 L18 13.5 L10 18 Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+          <path d="M10 9 L10 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      </span>
       <input
         type="range"
         min={0}
@@ -38,23 +41,23 @@ export default function DimensionSlider({ value, onChange, disabled }: Props) {
         step={1}
         value={pct}
         disabled={disabled}
-        aria-label="Amount of 3D, from a flat plan to an exploded stack of floors"
+        aria-label="Camera tilt, from straight down to across"
         onChange={(e) => onChange(Number(e.target.value) / 100)}
       />
-      <div className="dim-stops">
-        {DIMENSION_STOPS.map((s) => (
-          <button
-            key={s.label}
-            type="button"
-            className={active?.label === s.label ? "active" : ""}
-            disabled={disabled}
-            onClick={() => onChange(s.at)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-      {disabled && <p className="dim-note">Editing works on the flat plan.</p>}
+      <span className="tilt-icon" aria-hidden="true" title="Straight down">
+        <svg viewBox="0 0 20 20" width="15" height="15">
+          <rect
+            x="3.5"
+            y="3.5"
+            width="13"
+            height="13"
+            rx="1.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          />
+        </svg>
+      </span>
     </div>
   );
 }
