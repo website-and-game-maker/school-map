@@ -713,46 +713,30 @@ button { font-family: inherit; }
   height: 100%;
 }
 
-/* ---------------- the tilt dial (vertical, bottom right of the map) ------ */
+/* ---------------- the pan hint (bottom right of the map) ----------------- */
+/* Drag already tilts the view — that's OrbitControls' own rotate gesture, and
+   it needs no explanation. Panning is the gesture that isn't the obvious
+   one-finger drag, so this says what does it and nothing else. */
 
-.tilt-dial {
+.pan-hint {
   position: absolute;
   right: 16px;
   bottom: 22px;
   z-index: 6;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
+  padding: 7px 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(8px);
   box-shadow: 0 3px 14px rgba(28, 21, 18, 0.14);
   color: var(--muted);
-}
-
-.tilt-dial.disabled { opacity: 0.5; }
-
-.tilt-icon { display: grid; place-items: center; }
-
-/* A vertical range input: max at the top, so pushing the thumb up stands the
-   view up. `writing-mode: vertical-rl` with direction rtl is the modern way;
-   the -webkit-slider-vertical appearance is long deprecated. */
-.tilt-dial input[type="range"] {
-  writing-mode: vertical-rl;
-  direction: rtl;
-  width: 22px;
-  height: 128px;
-  margin: 0;
-  accent-color: var(--maroon);
-  cursor: pointer;
+  font-size: 12px;
+  pointer-events: none;
+  max-width: calc(100% - 28px);
 }
 
 @media (max-width: 760px) {
-  .tilt-dial { right: 12px; bottom: 16px; padding: 10px 6px; }
-  .tilt-dial input[type="range"] { height: 96px; }
+  .pan-hint { right: 12px; bottom: 16px; font-size: 11px; padding: 6px 11px; }
 }
 
 /* ---------------- floor stack (top right of the map) --------------------- */

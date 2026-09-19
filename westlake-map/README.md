@@ -15,8 +15,8 @@ New in v7:
   eye — see *Reading the plan* below. This found four rooms on the Main level
   whose labels were a whole room out of step, so asking for 220 walked you to
   218.
-- **One 3D dial instead of two view modes.** Flat plan → building → exploded
-  stack, on a slider, and 3D is what you get on arrival.
+- **One 3D view instead of two view modes**, tilted by dragging rather than by
+  a slider next to a drag gesture that already did the same thing.
 - **Stairwell columns** tie each stairwell through the storeys, so the stack
   reads as one building — and a leaning column is the floor alignment being
   wrong, drawn at full size.
@@ -29,19 +29,35 @@ New in v7:
 Two interesting parts: how a route is found, and how a scanned PDF became a
 3D model of the school.
 
-## The tilt dial
+## Tilt
 
-One vertical slider, bottom right of the map. It swings the camera between
-looking straight down and looking across, and it does nothing else.
+Click-and-drag swings the camera between looking straight down and looking
+across, and it does nothing else. That drag is OrbitControls' own rotate
+gesture, doing the job for free — there used to also be a vertical slider next
+to it doing the same motion, which was two controls fighting over one thing
+rather than a second thing to control. The slider is gone. A small hint by the
+map says how to pan instead, since that's the one gesture that isn't the
+obvious one-finger drag: right-click drag on a mouse, two fingers on a
+trackpad or touchscreen.
 
 It used to also open and close the storey stack — "Flat / Building / Exploded"
 — on the theory that a plan and an exploded diagram are two ends of one
 continuum. They are, but tying them to one control meant the building changed
 shape while you were changing your viewpoint, and a model that reshapes itself
 under you is one you stop trusting. Worse, the flat end swapped renderers, so
-pushing the slider all the way down jumped to a differently-scaled view of a
-different thing. The stack is now simply always open and the dial is a camera
-control; the two ends of it are the same model at the same scale.
+pushing the old slider all the way down jumped to a differently-scaled view of
+a different thing. The stack is now simply always open and tilt is a camera
+effect only; both ends of it are the same model at the same scale.
+
+The one thing that still answers to tilt besides the camera is how far the
+unfocused storeys fade — three floor plates stacked 110 ft apart all project
+onto the same spot looking straight down, so the two you are not reading have
+to disappear or they turn the one you are into mush. That fade used to read a
+slider's own number; now that dragging is the only way to tilt, it reads the
+camera's actual elevation instead, recomputed on every frame the camera moves
+(`currentElevationDeg` in `viewer.ts`), so it still comes and goes exactly as
+before — smoothly, and tied to what's on screen rather than to a value nothing
+sets any more.
 
 The 2D renderer still exists, and editing is the one thing that uses it: the
 points, the drag handles and the click targets live in an SVG overlay, which is
@@ -327,8 +343,9 @@ cross-floor matching has to guess which one Upper's marker pairs with.
 
 **Aligning the floors.** *How the floors line up* in the edit panel nudges the
 active storey — position, scale, rotation — and the 3D view re-registers live.
-Main is the reference and does not move. Slide the dial to Exploded and nudge
-until the stairwell columns stand up straight. Ten minutes of this closes the
+Main is the reference and does not move. Drag to tilt the view until the
+stairwell columns are easy to see, and nudge until they stand up straight.
+Ten minutes of this closes the
 largest accuracy gap in the 3D view; it leaves as `proposal-align3d.json`, or
 writes `align3d.json` directly under `npm run dev`.
 

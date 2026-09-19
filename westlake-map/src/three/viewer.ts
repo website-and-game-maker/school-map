@@ -20,9 +20,10 @@ import type { Directions } from "../lib/directions";
 import { FLOOR_ORDER } from "../data/floors";
 
 import {
+  DEFAULT_ELEVATION_DEG,
   FLOOR_INDEX,
   SPREAD,
-  elevationForDimension,
+  dimensionForElevation,
   ghostOpacityForDimension,
   storeyY,
 } from "./units";
@@ -48,11 +49,6 @@ export interface Viewer3DProps {
   floors: Record<FloorId, FloorData>;
   stairs: StairLink[];
   activeFloor: FloorId;
-  /**
-   * The tilt dial, 0..1: 0 looks straight down, 1 looks across. See units.ts.
-   * It moves the camera and nothing else — the storey stack is always open.
-   */
-  dimension: number;
   /** Draw the coloured columns tying each stairwell through the storeys. */
   showStairColumns: boolean;
   /**
@@ -145,6 +141,17 @@ export class MapViewer3D {
   private invalidate = () => {
     this.dirty = true;
   };
+  /**
+   * The drag gesture (OrbitControls' own rotate) is the only tilt control
+   * there is now, so the ghost fade — which used to answer to a slider —
+   * has to be recomputed on every camera change, not just when the active
+   * floor or the alignment changes. Cheap: a handful of material properties,
+   * no allocation, and it only runs while the camera is actually moving.
+   */
+  private onOrbitChange = () => {
+    this.applyFloorStates();
+    this.invalidate();
+  };
 
   constructor(host: HTMLElement, props: Viewer3DProps, cb: Viewer3DCallbacks) {
     this.host = host;
@@ -188,7 +195,7 @@ export class MapViewer3D {
     this.controls.screenSpacePanning = false;
     this.controls.rotateSpeed = 0.7;
     this.controls.zoomSpeed = 0.8;
-    this.controls.addEventListener("change", this.invalidate);
+    this.controls.addEventListener("change", this.onOrbitChange);
     // Auto-focus: the storey the camera is aimed at becomes the active one.
     this.controls.addEventListener("end", this.pickFocusFromCamera);
 
@@ -425,6 +432,13 @@ export class MapViewer3D {
 
   private applyFloorStates(): void {
     const activeIdx = FLOOR_INDEX[this.props.activeFloor];
+    // Looking straight down, the storeys are all at the same height, so the
+    // unfocused ones would sit exactly on top of the one being read and turn
+    // it to mush. They fade out as the camera flattens toward plan, which is
+    // also what makes "flat" read as a plan of ONE floor rather than a bad 3D
+    // view — and back in the moment the drag tilts away from it, since this
+    // is read straight off the camera's own elevation now.
+    const ghost = ghostOpacityForDimension(dimensionForElevation(this.currentElevationDeg()));
 
     // Every storey is always on screen. Picking a floor changes *emphasis*, not
     // visibility: this is a map of a three-storey building, and hiding two of
@@ -441,11 +455,6 @@ export class MapViewer3D {
       parts.ghostPlate.visible = false;
       parts.ghostOutline.visible = false;
 
-      // At the flat end of the dial the storeys are all at the same height, so
-      // the unfocused ones would sit exactly on top of the one being read and
-      // turn it to mush. They fade out as the stack closes, which is also what
-      // makes "Flat" read as a plan of ONE floor rather than a bad 3D view.
-      const ghost = ghostOpacityForDimension(this.props.dimension);
       const hidden = !focus && ghost < 0.02;
       parts.walls.visible = !hidden;
       parts.slab.visible = !hidden;
@@ -500,6 +509,19 @@ export class MapViewer3D {
   // ----------------------------------------------------- focus & vertical
 
   /**
+   * The camera's actual elevation above the horizon, in degrees, computed
+   * from where it currently sits relative to the orbit target — not from any
+   * stored number, because there isn't one any more. 90 is looking straight
+   * down; 0 would be looking dead level.
+   */
+  private currentElevationDeg(): number {
+    const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+    const horiz = Math.hypot(offset.x, offset.z);
+    if (horiz < 1e-6 && Math.abs(offset.y) < 1e-6) return DEFAULT_ELEVATION_DEG; // not placed yet
+    return (Math.atan2(offset.y, horiz) * 180) / Math.PI;
+  }
+
+  /**
    * Decide which storey the camera is looking at, and tell the app.
    *
    * "Looking at" is the orbit target's height, not the camera's: you can be
@@ -507,9 +529,9 @@ export class MapViewer3D {
    * wins, with a dead zone so a target sitting almost exactly between two
    * floors does not flip back and forth as the user nudges the view.
    *
-   * Skipped entirely when the stack is collapsed — at the flat end of the dial
-   * every storey is at the same height, so there is nothing to infer and the
-   * answer would be noise.
+   * Skipped entirely when the stack is collapsed — with the camera flattened
+   * to plan every storey is at the same height, so there is nothing to infer
+   * and the answer would be noise.
    */
   private pickFocusFromCamera = () => {
     if (this.disposed || this.cameraDriven) return;
@@ -644,7 +666,7 @@ export class MapViewer3D {
       CAMERA.minDistance,
       CAMERA.maxDistance
     );
-    this.placeCamera(centre, dist, elevationForDimension(this.props.dimension), CAMERA.overviewAzimuthDeg);
+    this.placeCamera(centre, dist, DEFAULT_ELEVATION_DEG, CAMERA.overviewAzimuthDeg);
   }
 
   /** The centre of the built model, not the page origin — the building only
@@ -661,47 +683,16 @@ export class MapViewer3D {
     const c = this.modelCentre();
     const parts = this.floorParts.get("main");
     const r = parts?.walls.geometry.boundingSphere?.radius ?? 600;
-    // 1.5 left the building as a small island in a lot of ground. The stack
-    // grows upward as the dial opens, so allow for the spread as well as the
-    // plan extent rather than padding blindly.
+    // 1.5 left the building as a small island in a lot of ground. The stack is
+    // always open at its full spread, so allow for that as well as the plan
+    // extent rather than padding blindly.
     const reach = Math.max(r, r * 0.85 + this.spread * 0.9);
     const dist = clamp(
       (reach * 1.12) / Math.tan((CAMERA.fov * Math.PI) / 360),
       CAMERA.minDistance,
       CAMERA.maxDistance
     );
-    this.placeCamera(c, dist, elevationForDimension(this.props.dimension), CAMERA.overviewAzimuthDeg);
-  }
-
-  /**
-   * Swing the camera to a given elevation about the current target, keeping its
-   * distance and its compass bearing. This is what the dial drives: the user
-   * has already chosen where they are standing, and the slider should only
-   * change how far they are leaning over.
-   */
-  private tiltTo(elevDeg: number): void {
-    const target = this.controls.target;
-    const offset = new THREE.Vector3().subVectors(this.camera.position, target);
-    const dist = offset.length();
-    if (dist < 1e-3) return;
-    const az = Math.atan2(offset.x, offset.z);
-    // OrbitControls clamps polar angle; asking for something outside its range
-    // and letting it clamp would silently desync the dial from the picture.
-    const polar = clamp(
-      Math.PI / 2 - (elevDeg * Math.PI) / 180,
-      CAMERA.minPolarAngle,
-      CAMERA.maxPolarAngle
-    );
-    const el = Math.PI / 2 - polar;
-    this.cameraDriven = true;
-    this.camera.position.set(
-      target.x + dist * Math.cos(el) * Math.sin(az),
-      target.y + dist * Math.sin(el),
-      target.z + dist * Math.cos(el) * Math.cos(az)
-    );
-    this.controls.update();
-    this.cameraDriven = false;
-    this.invalidate();
+    this.placeCamera(c, dist, DEFAULT_ELEVATION_DEG, CAMERA.overviewAzimuthDeg);
   }
 
   private placeCamera(target: THREE.Vector3, dist: number, elevDeg: number, azDeg: number): void {
@@ -729,16 +720,6 @@ export class MapViewer3D {
       this.placements = next.placements;
       // Re-registering a storey moves every wall, slab and stair column on it.
       this.rebuildForAlignment();
-    }
-
-    if (prev.dimension !== next.dimension) {
-      // Camera only. The one thing that follows the dial besides the camera is
-      // how far the unfocused storeys fade, and that is a consequence of the
-      // angle: looking straight down they would sit on top of the floor being
-      // read.
-      this.tiltTo(elevationForDimension(next.dimension));
-      this.applyFloorStates();
-      this.invalidate();
     }
 
     const floorChanged = prev.activeFloor !== next.activeFloor;
@@ -801,7 +782,7 @@ export class MapViewer3D {
     this.ro.disconnect();
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.renderer.domElement.removeEventListener("webglcontextlost", this.onContextLost);
-    this.controls.removeEventListener("change", this.invalidate);
+    this.controls.removeEventListener("change", this.onOrbitChange);
     this.controls.removeEventListener("end", this.pickFocusFromCamera);
     this.controls.dispose();
 

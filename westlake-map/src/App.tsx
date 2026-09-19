@@ -6,7 +6,6 @@ import MapCanvas, { type EditTool } from "./components/MapCanvas";
 // the next ten seconds — fast on school wifi.
 const MapCanvas3D = lazy(() => import("./components/MapCanvas3D"));
 import SearchBox from "./components/SearchBox";
-import DimensionSlider from "./components/DimensionSlider";
 import EditorKeyDialog from "./components/EditorKeyDialog";
 import FeedbackPanel from "./components/FeedbackPanel";
 import { FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
@@ -43,14 +42,6 @@ export default function App() {
   const markCount = useMemo(() => stairMarks(floors).length, [floors]);
   const [floorId, setFloorId] = useState<FloorId>("main");
 
-  // Camera tilt, 0..1: 0 looks straight down, 1 looks across. See three/units.ts.
-  // It moves the camera and nothing else — the storey stack is always open.
-  //
-  // Starts tilted, so the first thing anyone sees is a building with three
-  // floors in it. A flat plan of a three-storey school does not tell you it has
-  // three storeys, and that is the single most common thing people get wrong
-  // about this place.
-  const [dimension, setDimension] = useState(0.55);
   const [showStairColumns, setShowStairColumns] = useState(true);
   const [placements, setPlacements] = useState(initialPlacements);
 
@@ -698,7 +689,7 @@ export default function App() {
             <p className="tool-hint">
               The three plans are separate scans with no registration marks, so where a storey sits
               relative to the others is a fit through a handful of shared entrances — out by
-              anywhere from 10 to 51 ft. Slide the 3D dial up to <strong>Exploded</strong> and watch
+              anywhere from 10 to 51 ft. Step out of editing, drag to tilt the 3D view, and watch
               the coloured stairwell columns: where two floors are misaligned, the column joining
               them <em>leans</em>. Nudge until it stands up.
             </p>
@@ -901,7 +892,6 @@ export default function App() {
             floors={floors}
             stairs={stairs}
             activeFloor={floorId}
-            dimension={dimension}
             showStairColumns={showStairColumns}
             placements={placements}
             route={routeResult}
@@ -913,7 +903,6 @@ export default function App() {
             // so the panel, the badge and the model never disagree about which
             // one you are reading.
             onFocusFloor={setFloorId}
-            onFatal={() => setDimension(0)}
           />
           </Suspense>
         )}
@@ -951,9 +940,11 @@ export default function App() {
 
         {destLabel && !editMode && <div className="map-badge">→ {destLabel}</div>}
 
-        {!editMode && (
-          <DimensionSlider value={dimension} onChange={setDimension} />
-        )}
+        {/* Drag already tilts the view (it's the OrbitControls rotate gesture),
+            so there is no separate control for it any more. Panning is the one
+            gesture that isn't the obvious one-finger drag, so it's the one that
+            gets said out loud. */}
+        {view === "3d" && <div className="pan-hint">Drag to tilt · right-click or two fingers to pan</div>}
       </main>
 
       {/* One panel: a sidebar on a laptop, a bottom sheet over the map on a
