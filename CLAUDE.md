@@ -46,10 +46,12 @@ invalidates `PX_PER_FOOT`, `align3d.json` and every traced point at once.
   other, `scanReview.ts` surfaces what the plan reader was unsure about, and
   `feedback.ts` turns a sentence of feedback into a prompt.
 - `src/three/` — the 3D view. `units.ts` and `placement.ts` are the coordinate
-  foundation — `units.ts` also owns the **3D dial**, the single 0..1 number that
-  runs storey spacing, camera tilt and ghost opacity; `walls.ts` greedy-meshes
+  foundation — `units.ts` also owns storey spacing and the ghost-opacity curve
+  that fades unfocused floors as the camera tilts; `walls.ts` greedy-meshes
   the wall geometry; `stairColumns.ts` ties the storeys together visibly;
-  `viewer.ts` owns the scene and every three.js object.
+  `viewer.ts` owns the scene and every three.js object, including the camera
+  tilt itself, which is read straight off the OrbitControls drag rather than
+  driven by a separate control.
 - `src/data/floors/` — traced room positions, the nav grids, the wall geometry,
   and the per-storey 3D placement.
 - `tools/` — the Python that turns the scanned plans into all of the above.
@@ -84,13 +86,17 @@ it before changing the extraction.
   the app's Edit mode, one marker per stairwell per floor — placing a second one
   nearby moves the first rather than adding a rival, so "which stairwell is this"
   always has one answer. Cross-floor routes are approximate until they are.
-- **The dial is camera tilt and nothing else.** `dimension` runs 0..1: 0 looks
-  straight down, 1 looks across. The storey stack is ALWAYS open at 110 ft. It
-  used to open and close the stack as well, and the flat end swapped to the 2D
-  renderer — so pushing the slider down jumped to a differently-scaled view of a
-  different thing. Do not make the dial change the model again, and do not
-  reintroduce a 2D/3D toggle. Editing is the one thing that uses the 2D
-  renderer, because the edit overlay is SVG.
+- **Tilt is a drag gesture, not a control.** There used to be a slider next to
+  it doing the same thing the OrbitControls rotate drag already did, which is
+  two controls for one motion. The slider is gone; dragging the camera *is*
+  the tilt, read back each frame as the camera's own elevation
+  (`currentElevationDeg` in `viewer.ts`) to drive the ghost fade that used to
+  answer to the slider's number instead. The storey stack is ALWAYS open at
+  110 ft regardless of tilt. It used to open and close the stack as well, and
+  the flat end swapped to the 2D renderer — so pushing the old slider down
+  jumped to a differently-scaled view of a different thing. Do not make tilt
+  change the model again, and do not reintroduce a 2D/3D toggle. Editing is
+  the one thing that uses the 2D renderer, because the edit overlay is SVG.
 
 - **A wall is ink with a different space on each side of it.** Not "a long
   straight run of ink" — that was the old definition and it drew every door

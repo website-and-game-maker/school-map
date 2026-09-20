@@ -45,17 +45,28 @@ export const SLAB_THICKNESS = 2.5;
 export const GROUND_Y = -8;
 
 // ---------------------------------------------------------------------------
-// The tilt dial.
+// Tilt.
 //
-// One number, 0..1, and it does exactly one thing: it swings the camera between
-// looking straight down and looking across. Nothing else about the model moves.
+// There used to be a slider for this, next to the drag gesture that already
+// did the same thing — two controls for one motion, which is confusing
+// rather than generous. Click-and-drag (the OrbitControls rotate gesture)
+// is now the only way to tilt, and it drives the camera directly: there is
+// no longer a separate 0..1 number the drag has to be translated into and
+// back out of.
+//
+// What still needs a number is the ghost fade below, because it has to track
+// the tilt the drag actually produced, continuously, not just at the two ends
+// a dial would have offered. `dimensionForElevation` is that one remaining
+// piece of the old vocabulary: it takes the camera's actual elevation and
+// maps it onto the 0..1 scale the fade math below was written against, so
+// that math didn't need to change shape along with the control.
 //
 // It used to also open and close the storey stack, on the theory that a flat
 // plan and an exploded diagram were two ends of one continuum. They are, but
 // tying them to one control meant the building changed shape while you were
 // trying to change your viewpoint, and a model that reshapes itself under you
-// is a model you stop trusting. So the stack is simply always open, and the
-// dial is a camera control.
+// is a model you stop trusting. So the stack is simply always open, and tilt
+// is a camera-only effect.
 
 // Storey separation, fixed. On a building 1200 ft across, three storeys any
 // closer than this read as one surface from any sensible angle: you see Main's
@@ -71,11 +82,24 @@ const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
 
 /** Camera elevation above the horizon, in degrees. 0 = plan, 1 = across. */
 export function elevationForDimension(dim: number): number {
-  // Linear on purpose. Easing this was tried and makes the slider feel like it
-  // sticks at the ends, which on a control whose whole job is "how tilted"
-  // reads as a bug rather than as polish.
+  // Linear on purpose. Easing this was tried and makes the transition feel
+  // like it sticks at the ends, which for a motion whose whole point is "how
+  // tilted" reads as a bug rather than as polish.
   return 90 - 65 * clamp01(dim);
 }
+
+/**
+ * The inverse of `elevationForDimension`: given the camera's actual
+ * elevation (in degrees, 90 = looking straight down), what 0..1 dimension
+ * would have produced it. Used to feed a live drag angle into
+ * `ghostOpacityForDimension` now that nothing else keeps that number around.
+ */
+export function dimensionForElevation(elevDeg: number): number {
+  return clamp01((90 - elevDeg) / 65);
+}
+
+/** The elevation the camera opens at, before anyone has dragged it. */
+export const DEFAULT_ELEVATION_DEG = elevationForDimension(0.55);
 
 /**
  * How much the unfocused storeys fade.
