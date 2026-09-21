@@ -62,6 +62,15 @@ export interface Viewer3DProps {
   routeKey: string;
   directions: Directions | null;
   activeStep: number | null;
+  /**
+   * How many pixels of the canvas's own bottom edge the phone's bottom sheet
+   * currently covers. Zero on desktop, where the panel sits beside the map
+   * rather than over it. The camera still renders the full canvas — this
+   * only shifts what a viewer actually sees toward the part that isn't
+   * hidden, via `camera.setViewOffset`, so a route framed with the sheet
+   * open doesn't end up with its lower half behind it.
+   */
+  obscuredBottom: number;
 }
 
 export interface Viewer3DCallbacks {
@@ -207,6 +216,7 @@ export class MapViewer3D {
     this.applyFloorStates();
     this.syncStairColumns();
     this.syncRoute();
+    this.applyViewOffset();
     this.resetView(); // after the floors, so it can frame the real model
 
     this.ro = new ResizeObserver(() => this.queueResize());
@@ -695,6 +705,28 @@ export class MapViewer3D {
     this.placeCamera(c, dist, DEFAULT_ELEVATION_DEG, CAMERA.overviewAzimuthDeg);
   }
 
+  /**
+   * Shift what the canvas shows toward the strip that isn't behind the
+   * bottom sheet, without touching the camera's own position or target.
+   *
+   * A taller virtual sensor is declared (canvas height plus the obscured
+   * strip) and only its top window — the canvas's actual size — is
+   * rendered. That pushes the frustum's own centre down past the bottom of
+   * the visible window, which is exactly the same as pushing everything the
+   * camera is looking at up on screen: away from the sheet, not smaller.
+   */
+  private applyViewOffset(): void {
+    const w = Math.max(1, this.host.clientWidth);
+    const h = Math.max(1, this.host.clientHeight);
+    const obscured = Math.max(0, this.props.obscuredBottom);
+    if (obscured < 1) {
+      this.camera.clearViewOffset();
+    } else {
+      this.camera.setViewOffset(w, h + obscured, 0, obscured, w, h);
+    }
+    this.camera.updateProjectionMatrix();
+  }
+
   private placeCamera(target: THREE.Vector3, dist: number, elevDeg: number, azDeg: number): void {
     const el = (elevDeg * Math.PI) / 180;
     const az = (azDeg * Math.PI) / 180;
@@ -738,6 +770,11 @@ export class MapViewer3D {
       this.applyFloorStates();
       this.frameRoute();
     }
+
+    if (prev.obscuredBottom !== next.obscuredBottom) {
+      this.applyViewOffset();
+      this.invalidate();
+    }
   }
 
   private queueResize(): void {
@@ -751,7 +788,7 @@ export class MapViewer3D {
       if (w === 0 || h === 0) return; // the bottom sheet is mid-transition
       this.renderer.setSize(w, h, false);
       this.camera.aspect = w / h;
-      this.camera.updateProjectionMatrix();
+      this.applyViewOffset();
       this.invalidate();
     });
   }

@@ -76,6 +76,22 @@ export default function App() {
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const mapAreaRef = useRef<HTMLDivElement | null>(null);
 
+  // Tracked so the 3D view can compensate for the bottom sheet the same way
+  // the 2D framing already does (see frameOn's padBottom below) — otherwise a
+  // route framed with the sheet open ends up with its lower half behind it.
+  const [viewportW, setViewportW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setViewportW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const isPhoneLayout = viewportW <= 760;
+  const obscuredBottomPx = useMemo(() => {
+    if (!isPhoneLayout) return 0;
+    const areaH = mapAreaRef.current?.clientHeight ?? window.innerHeight;
+    return sheetOpen ? areaH * 0.52 : 200;
+  }, [isPhoneLayout, sheetOpen]);
+
   const floor = floors[floorId];
   const searchIndex = useMemo(() => buildSearchIndex(floors), [floors]);
   const restroomCount = useMemo(
@@ -898,6 +914,7 @@ export default function App() {
             routeKey={`${fromItem?.kind ?? ""}:${fromItem?.floor ?? ""}:${fromItem?.id ?? ""}|${toItem?.kind ?? ""}:${toItem?.floor ?? ""}:${toItem?.id ?? ""}|${legs.length}`}
             directions={directions}
             activeStep={activeStep}
+            obscuredBottom={obscuredBottomPx}
             onPickFloor={switchFloor}
             // Auto-focus: orbit onto a storey and it becomes the active floor,
             // so the panel, the badge and the model never disagree about which
