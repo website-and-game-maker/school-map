@@ -151,10 +151,6 @@ Nearest in line, in order:
    transitions. Page 2 of the tour map is exactly this, hand-drawn by a student,
    which is good evidence it is the feature that would make people who already
    know the building open the app.
-6. **Mobile route framing.** The 2D view aims a route at the strip of map the
-   bottom sheet leaves visible; the 3D view centres on the whole canvas, so on a
-   phone the lower part of a route can sit behind the sheet. The fix is to pass
-   the sheet height into the viewer and use `camera.setViewOffset`.
 
 Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
 
