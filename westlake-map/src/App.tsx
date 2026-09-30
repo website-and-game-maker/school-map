@@ -31,6 +31,7 @@ import type { FloorData, FloorId, FloorPoint } from "./types";
 import "./App.css";
 
 const FLOOR_SHORT: Record<FloorId, string> = { lower: "Lower", main: "Main", upper: "Upper" };
+const PHONE_QUERY = "(max-width: 760px)";
 
 export default function App() {
   const [floors, setFloors] = useState<Record<FloorId, FloorData>>(INITIAL_FLOORS);
@@ -76,21 +77,49 @@ export default function App() {
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const mapAreaRef = useRef<HTMLDivElement | null>(null);
 
-  // Tracked so the 3D view can compensate for the bottom sheet the same way
-  // the 2D framing already does (see frameOn's padBottom below) — otherwise a
-  // route framed with the sheet open ends up with its lower half behind it.
-  const [viewportW, setViewportW] = useState(() => window.innerWidth);
-  useEffect(() => {
-    const onResize = () => setViewportW(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+  const panelShellRef = useRef<HTMLElement | null>(null);
+
+  // Same query as App.css, so JS and CSS can never disagree about "phone".
+  const [isPhoneLayout, setIsPhoneLayout] = useState(() => matchMedia(PHONE_QUERY).matches);
+  // CSS px of the map's bottom edge the sheet covers right now (0 on desktop).
+  const [obscuredBottomPx, setObscuredBottomPx] = useState(0);
+  const measureObscured = useCallback(() => {
+    const area = mapAreaRef.current;
+    const panel = panelShellRef.current;
+    const px =
+      area && panel && matchMedia(PHONE_QUERY).matches
+        ? Math.max(0, Math.round(area.getBoundingClientRect().bottom - panel.getBoundingClientRect().top))
+        : 0;
+    setObscuredBottomPx(px); // same value bails out, so no re-render
   }, []);
-  const isPhoneLayout = viewportW <= 760;
-  const obscuredBottomPx = useMemo(() => {
-    if (!isPhoneLayout) return 0;
-    const areaH = mapAreaRef.current?.clientHeight ?? window.innerHeight;
-    return sheetOpen ? areaH * 0.52 : 200;
-  }, [isPhoneLayout, sheetOpen]);
+  useEffect(() => {
+    const mq = matchMedia(PHONE_QUERY);
+    const onMq = () => {
+      setIsPhoneLayout(mq.matches);
+      measureObscured();
+    };
+    mq.addEventListener("change", onMq);
+    const area = mapAreaRef.current;
+    const panel = panelShellRef.current;
+    const ro = new ResizeObserver(measureObscured);
+    if (area) ro.observe(area);
+    if (panel) ro.observe(panel);
+    // The open/close animation is a transform, which resizes nothing.
+    const onEnd = (e: TransitionEvent) => {
+      if (e.target === panel) measureObscured();
+    };
+    panel?.addEventListener("transitionend", onEnd);
+    return () => {
+      mq.removeEventListener("change", onMq);
+      ro.disconnect();
+      panel?.removeEventListener("transitionend", onEnd);
+    };
+  }, [measureObscured]);
+  // Reduced motion has no transition (so no transitionend): measure once laid out.
+  useEffect(() => {
+    const raf = requestAnimationFrame(measureObscured);
+    return () => cancelAnimationFrame(raf);
+  }, [sheetOpen, measureObscured]);
 
   const floor = floors[floorId];
   const searchIndex = useMemo(() => buildSearchIndex(floors), [floors]);
@@ -183,12 +212,10 @@ export default function App() {
       const area = mapAreaRef.current;
       const tp = transformRef.current;
       if (!area || !tp) return;
-      const isPhone = window.innerWidth <= 760;
       const padX = 60;
       const padTop = 60;
-      // On a phone the bottom sheet covers the lower part of the map, so aim
-      // the route at the strip that's actually visible.
-      const padBottom = isPhone ? (sheetOpen ? area.clientHeight * 0.52 : 200) : 60;
+      // Aim the route at the strip above the sheet, with a margin over its edge.
+      const padBottom = isPhoneLayout ? obscuredBottomPx + 24 : 60;
       const w = Math.max(box.maxX - box.minX, 200);
       const h = Math.max(box.maxY - box.minY, 200);
       const availW = Math.max(area.clientWidth - padX * 2, 100);
@@ -200,7 +227,7 @@ export default function App() {
       const targetY = padTop + availH / 2;
       tp.setTransform(targetX - cx * scale, targetY - cy * scale, scale, animate);
     },
-    [sheetOpen]
+    [isPhoneLayout, obscuredBottomPx]
   );
 
   const frameLeg = useCallback(
@@ -966,7 +993,7 @@ export default function App() {
 
       {/* One panel: a sidebar on a laptop, a bottom sheet over the map on a
           phone. Same markup either way, so there's only ever one search box. */}
-      <aside className={`panel-shell${sheetOpen ? " open" : ""}`}>
+      <aside className={`panel-shell${sheetOpen ? " open" : ""}`} ref={panelShellRef}>
         <button
           className="sheet-handle"
           onClick={() => setSheetOpen((v) => !v)}

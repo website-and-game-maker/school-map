@@ -64,11 +64,13 @@ export interface Viewer3DProps {
   activeStep: number | null;
   /**
    * How many pixels of the canvas's own bottom edge the phone's bottom sheet
-   * currently covers. Zero on desktop, where the panel sits beside the map
-   * rather than over it. The camera still renders the full canvas — this
-   * only shifts what a viewer actually sees toward the part that isn't
-   * hidden, via `camera.setViewOffset`, so a route framed with the sheet
-   * open doesn't end up with its lower half behind it.
+   * currently covers, in CSS pixels. Zero on desktop, where the panel sits
+   * beside the map rather than over it. The camera still renders the full
+   * canvas at the same scale; this only moves the projection centre up to
+   * the middle of the strip the sheet leaves visible (clamped so that strip
+   * never drops below a quarter of the canvas). Framing (`frameRoute`,
+   * `resetView`) also backs the camera off so its content fits that strip.
+   * A change on its own re-centres but does not reframe.
    */
   obscuredBottom: number;
 }
@@ -216,7 +218,7 @@ export class MapViewer3D {
     this.applyFloorStates();
     this.syncStairColumns();
     this.syncRoute();
-    this.applyViewOffset();
+    this.applyViewOffset(w, h);
     this.resetView(); // after the floors, so it can frame the real model
 
     this.ro = new ResizeObserver(() => this.queueResize());
@@ -672,7 +674,7 @@ export class MapViewer3D {
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(size.x, size.z, size.y * 2) * 0.5 + 90;
     const dist = clamp(
-      radius / Math.tan((CAMERA.fov * Math.PI) / 360),
+      radius / Math.tan((CAMERA.fov * Math.PI) / 360) / this.visibleFraction(),
       CAMERA.minDistance,
       CAMERA.maxDistance
     );
@@ -698,7 +700,7 @@ export class MapViewer3D {
     // extent rather than padding blindly.
     const reach = Math.max(r, r * 0.85 + this.spread * 0.9);
     const dist = clamp(
-      (reach * 1.12) / Math.tan((CAMERA.fov * Math.PI) / 360),
+      (reach * 1.12) / Math.tan((CAMERA.fov * Math.PI) / 360) / this.visibleFraction(),
       CAMERA.minDistance,
       CAMERA.maxDistance
     );
@@ -706,25 +708,42 @@ export class MapViewer3D {
   }
 
   /**
-   * Shift what the canvas shows toward the strip that isn't behind the
-   * bottom sheet, without touching the camera's own position or target.
-   *
-   * A taller virtual sensor is declared (canvas height plus the obscured
-   * strip) and only its top window — the canvas's actual size — is
-   * rendered. That pushes the frustum's own centre down past the bottom of
-   * the visible window, which is exactly the same as pushing everything the
-   * camera is looking at up on screen: away from the sheet, not smaller.
+   * The share of the canvas height left visible above the bottom sheet, in
+   * (0.25, 1]. The one place `obscuredBottom` is clamped, so the view offset
+   * and the framing distance can never disagree about the strip's size.
    */
-  private applyViewOffset(): void {
-    const w = Math.max(1, this.host.clientWidth);
-    const h = Math.max(1, this.host.clientHeight);
-    const obscured = Math.max(0, this.props.obscuredBottom);
+  private visibleFraction(h = Math.max(1, this.host.clientHeight)): number {
+    const raw = this.props.obscuredBottom;
+    // Keep at least a quarter of the canvas: past that the strip is too thin to frame into.
+    const obscured = Math.min(Math.max(0, Number.isFinite(raw) ? raw : 0), h * 0.75);
+    return (h - obscured) / h;
+  }
+
+  /**
+   * Centre the projection on the strip that isn't behind the bottom sheet,
+   * without touching the camera's position, target or scale.
+   *
+   * The virtual sensor is the canvas's own size, and the rendered window is
+   * slid down it by half the obscured height. That puts the principal point
+   * at (h - obscured) / 2 from the top of the canvas — the middle of the
+   * visible strip — while the fov and aspect stay those of the real canvas,
+   * so opening the sheet moves the picture up and never zooms it. (A taller
+   * sensor would change `aspect` and magnify by (h + obscured) / h.)
+   */
+  private applyViewOffset(
+    w = Math.max(1, this.host.clientWidth),
+    h = Math.max(1, this.host.clientHeight)
+  ): void {
+    const obscured = h * (1 - this.visibleFraction(h));
     if (obscured < 1) {
+      // clearViewOffset() leaves `aspect` as the last offset set it; restore it
+      // first so its own updateProjectionMatrix() uses the real one.
+      this.camera.aspect = w / h;
       this.camera.clearViewOffset();
     } else {
-      this.camera.setViewOffset(w, h + obscured, 0, obscured, w, h);
+      // setViewOffset sets aspect = w / h and updates the projection itself.
+      this.camera.setViewOffset(w, h, 0, obscured / 2, w, h);
     }
-    this.camera.updateProjectionMatrix();
   }
 
   private placeCamera(target: THREE.Vector3, dist: number, elevDeg: number, azDeg: number): void {
@@ -787,8 +806,7 @@ export class MapViewer3D {
       const h = this.host.clientHeight;
       if (w === 0 || h === 0) return; // the bottom sheet is mid-transition
       this.renderer.setSize(w, h, false);
-      this.camera.aspect = w / h;
-      this.applyViewOffset();
+      this.applyViewOffset(w, h);
       this.invalidate();
     });
   }
