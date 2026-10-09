@@ -1,8 +1,9 @@
 // The pile of things the scan reader was not sure enough about to act on.
 //
 // `tools/read_plan.py` reads every room number off the plan and applies the
-// reads it is confident in — measured threshold 0.5, above which no read has
-// turned out to be wrong and below which several have. What it will not do is
+// reads it is confident in — threshold 0.5, which a read reaches when two
+// independent readers (tesseract and templates learned from this map's own
+// font) agree on it. What it will not do is
 // guess. So a handful of rooms per floor end up in neither state: the reader
 // saw something, it fits the room-number grammar, but it scored 0.25 and could
 // equally be a 5 that is really a 6.

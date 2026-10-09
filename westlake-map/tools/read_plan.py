@@ -61,18 +61,22 @@ Usage:
     python3 tools/read_plan.py --render main    # + a PNG of every read
 """
 
+import hashlib
 import io
 import json
 import os
 import re
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from PIL import Image
 from scipy import ndimage as ndi
 
 import export_walls as ew
+import glyphs as gx
 import plans
 
 # --- what counts as a glyph ---------------------------------------------------
@@ -111,6 +115,39 @@ WHITELIST = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 # scored 0.50 or above. There is a real gap there, which is what makes a fixed
 # threshold defensible rather than a guess.
 MIN_APPLY_CONF = 0.5
+#
+# That held for tesseract alone until it didn't: Upper's 306 read as "308" at
+# 0.67, in the wrong room. Since then every read also gets a second, independent
+# opinion from templates learned off this map's own font (tools/glyphs.py):
+#   agree        -> both readers say the same thing: AGREE_CONF, applied.
+#                   Digits only: the suffix letter of "288B" is tesseract's
+#                   alone, so a suffixed read keeps tesseract's own score.
+#   dispute      -> the templates are sure of different digits: capped at
+#                   DISPUTED_CONF, so it goes to review instead of the map.
+#   corroborated -> tesseract got nothing, the templates are sure, AND a traced
+#                   point already claims that number right there: two
+#                   independent sources, CORROBORATED_CONF, applied.
+#   template     -> the templates alone: TEMPLATE_CONF, a suggestion only.
+AGREE_CONF = 0.75
+CORROBORATED_CONF = 0.6
+TEMPLATE_CONF = 0.3
+DISPUTED_CONF = 0.25
+# How close a traced point has to be to a read to be "the same room", for
+# reads made outside a room-sized pocket.
+NEAR_PX = 60
+
+# Human (or by-eye) verdicts on reads the tool cannot settle itself. Survives
+# re-runs, which a click in the app does not: see the file for the format.
+DECISIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'review-decisions.json')
+
+# Tesseract runs are the whole cost of this tool -- twelve renderings per
+# crop, ~0.35 s each. They run in parallel, one thread per tesseract (its own
+# OpenMP threading only fights the pool), and are cached by crop on disk, so a
+# re-run after a small change costs seconds rather than tens of minutes.
+WORKERS = max(1, (os.cpu_count() or 2))
+OCR_CACHE = os.path.join(plans.ASSETS, 'ocr-cache.json')
+_cache = None
+_cache_lock = threading.Lock()
 
 
 def log(*a):
@@ -124,8 +161,37 @@ def _png(im):
     return buf.getvalue()
 
 
+def _load_cache():
+    global _cache
+    if _cache is None:
+        try:
+            _cache = json.load(open(OCR_CACHE))
+        except (OSError, ValueError):
+            _cache = {}
+    return _cache
+
+
+def _save_cache():
+    if _cache is not None:
+        os.makedirs(plans.ASSETS, exist_ok=True)
+        with open(OCR_CACHE, 'w') as fh:
+            json.dump(_cache, fh)
+
+
 def _tesseract(arr, psm, scale, thicken):
-    """One rendering of one crop. `arr` is a bool mask, True where there is ink."""
+    """One rendering of one crop, cached. `arr` is a bool mask, True where there is ink."""
+    key = hashlib.sha1(np.packbits(arr).tobytes() + repr((arr.shape, psm, scale, thicken)).encode()).hexdigest()
+    cache = _load_cache()
+    with _cache_lock:
+        if key in cache:
+            return cache[key]
+    out = _tesseract_run(arr, psm, scale, thicken)
+    with _cache_lock:
+        cache[key] = out
+    return out
+
+
+def _tesseract_run(arr, psm, scale, thicken):
     a = ndi.binary_dilation(arr, np.ones((3, 3)), thicken) if thicken else arr
     im = Image.fromarray(((~a) * 255).astype(np.uint8))
     im = im.resize((im.width * scale, im.height * scale), Image.LANCZOS)
@@ -136,7 +202,8 @@ def _tesseract(arr, psm, scale, thicken):
         p = subprocess.run(
             ['tesseract', 'stdin', 'stdout', '--psm', str(psm),
              '-c', f'tessedit_char_whitelist={WHITELIST}'],
-            input=_png(page), capture_output=True, timeout=30)
+            input=_png(page), capture_output=True, timeout=30,
+            env={**os.environ, 'OMP_THREAD_LIMIT': '1'})
     except (OSError, subprocess.TimeoutExpired):
         return ''
     return re.sub(r'\s+', '', p.stdout.decode('utf8', 'ignore').upper())
@@ -209,27 +276,40 @@ def glyph_crop(marks):
     return sub[y0:y1, x0:x1], ((y0 + y1) / 2.0, (x0 + x1) / 2.0)
 
 
-def read_pocket(pocket, ink):
-    """Read the room number printed in one pocket. Returns (text, conf, centre)."""
+def best_read(options):
+    """Read each orientation of a crop; the grammar, then the vote, picks one.
+
+    Returns (text, conf, crop it was read from).
+    """
+    best = ('', 0.0, options[0] if options else None)
+    for opt in options:
+        text, conf = read_crop(opt)
+        if (ROOM_RE.match(text) is not None, conf) > (ROOM_RE.match(best[0]) is not None, best[1]):
+            best = (text, conf, opt)
+    return best
+
+
+def pocket_crops(pocket, ink):
+    """The upright crop(s) of the number printed in one pocket, and its centre."""
     marks = marks_in_pocket(pocket, ink)
     if marks.sum() < MIN_MARK_PX:
-        return '', 0.0, None
+        return [], None
     crop, centre = glyph_crop(marks)
     if crop is None or crop.size == 0:
-        return '', 0.0, None
+        return [], None
     h, w = crop.shape
     if h > w * VERTICAL_ASPECT:
         # Set vertically. Which way up is not knowable from the crop, so read
         # both and let the grammar decide.
-        options = [np.rot90(crop, -1), np.rot90(crop, 1)]
-    else:
-        options = [crop]
-    best = ('', 0.0)
-    for opt in options:
-        text, conf = read_crop(opt)
-        if (ROOM_RE.match(text) is not None, conf) > (ROOM_RE.match(best[0]) is not None, best[1]):
-            best = (text, conf)
-    return best[0], best[1], centre
+        return [np.rot90(crop, -1), np.rot90(crop, 1)], centre
+    return [crop], centre
+
+
+def read_pocket(pocket, ink):
+    """Read the room number printed in one pocket. Returns (text, conf, centre)."""
+    options, centre = pocket_crops(pocket, ink)
+    text, conf, _ = best_read(options)
+    return text, conf, centre
 
 
 def pole_of_inaccessibility(pocket):
@@ -257,19 +337,33 @@ def storey_pockets(floor):
     st = ew.storey_mask(ink_in_page, lines, pts, grey.shape) & ~hatch
     free = (~ink) & page_fp & st
     lab, n = ndi.label(free, structure=np.ones((3, 3)))
-    return ink, lab, n
+    return ink, ink_in_page, lines, lab, n
 
 
 def traced_rooms(floor):
-    """The shipped room points, as {id: (x, y, label)}."""
+    """The shipped room points, as {id: point}."""
     path = os.path.join(plans.OUT_DIR, f'{floor}.json')
     d = json.load(open(path))
     return {pid: p for pid, p in d['points'].items() if p.get('kind') == 'room'}
 
 
-def read_floor(floor, render=False):
+def _ocr(entries):
+    """Read every entry's crop options, in parallel."""
+    def one(e):
+        return best_read(e['_options'])
+    with ThreadPoolExecutor(WORKERS) as ex:
+        for e, (text, conf, crop) in zip(entries, ex.map(one, entries)):
+            e['text'], e['conf'], e['_crop'] = text, round(conf, 3), crop
+
+
+def read_floor(floor):
+    """Every room number tesseract can find on a storey -- pockets, then words.
+
+    The template opinion is added later by `main`, once all three storeys have
+    been read, because the templates learn from all of them at once.
+    """
     log(f'{floor}: reading {os.path.relpath(plans.page_path(floor), plans.ROOT)}')
-    ink, lab, n = storey_pockets(floor)
+    ink, ink_in_page, lines, lab, n = storey_pockets(floor)
     sizes = np.bincount(lab.ravel(), minlength=n + 1)[1:]
     objs = ndi.find_objects(lab)
 
@@ -287,69 +381,200 @@ def read_floor(floor, render=False):
         if len(vals):
             owner.setdefault(int(vals[np.argmax(counts)]), []).append(pid)
 
-    digits = FLOOR_DIGITS[floor]
-    reads = []
+    def room_sized(comp):
+        return MIN_POCKET_PX <= int(sizes[comp - 1]) <= MAX_POCKET_PX
+
+    # --- pass 1: the number as the holes in a sealed pocket -----------------
+    pockets, poles = [], {}
     for comp in range(1, n + 1):
-        area = int(sizes[comp - 1])
-        if not (MIN_POCKET_PX <= area <= MAX_POCKET_PX):
-            continue
         sl = objs[comp - 1]
-        if sl is None:
+        if sl is None or not room_sized(comp):
             continue
         pad = (slice(max(0, sl[0].start - 3), sl[0].stop + 3),
                slice(max(0, sl[1].start - 3), sl[1].stop + 3))
         pocket = (lab[pad] == comp)
-        text, conf, _ = read_pocket(pocket, ink[pad])
+        options, _ = pocket_crops(pocket, ink[pad])
         cy, cx, clear = pole_of_inaccessibility(pocket)
-        entry = {
-            'comp': comp,
-            'area': area,
-            'x': int(round(cx + pad[1].start)),
-            'y': int(round(cy + pad[0].start)),
-            'clearance': round(clear, 1),
-            'text': text,
-            'conf': round(conf, 3),
-            'traced': owner.get(comp, []),
-        }
+        poles[comp] = (int(round(cx + pad[1].start)), int(round(cy + pad[0].start)), round(clear, 1))
+        if options:
+            pockets.append({
+                'method': 'pocket', 'comp': comp, 'area': int(sizes[comp - 1]),
+                'x': poles[comp][0], 'y': poles[comp][1], 'clearance': poles[comp][2],
+                'traced': owner.get(comp, []), '_options': options,
+            })
+    _ocr(pockets)
+
+    # --- pass 2: words found in the ink, for everything pass 1 missed ---------
+    digits = FLOOR_DIGITS[floor]
+
+    def valid(text):
         # A read is only a room number if it fits the grammar AND starts with a
         # digit this storey actually uses. "283" read off the Upper sheet is a
         # misread, not a room on the wrong floor -- the numbering is by storey.
-        entry['valid'] = bool(ROOM_RE.match(text)) and text[0] in digits
-        reads.append(entry)
+        return bool(ROOM_RE.match(text)) and text[0] in digits
 
-    if render:
-        _render(floor, reads)
+    settled = {e['comp'] for e in pockets if valid(e['text'])}
+    gl, words = gx.find_words(ink_in_page, lines, lab)
+    found = []
+    for word in words:
+        comp = word[0]['pocket']
+        if comp in settled:
+            continue  # this room's number was already read as its holes
+        options = [crop for _, crop in gx.upright_crops(gl, word, VERTICAL_ASPECT)]
+        if not options:
+            continue
+        y0, y1, x0, x1 = gx.word_box(word)
+        wx, wy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        if comp in poles:
+            # A room-sized pocket: anchor at its open floor, as pass 1 does.
+            x, y, clear = poles[comp]
+            claims = owner.get(comp, [])
+        else:
+            # A leaky pocket spanning several rooms: the text is the only
+            # locator there is. Only a traced point sitting right on this word
+            # is taken as claiming it.
+            x, y, clear = int(round(wx)), int(round(wy)), 0.0
+            claims = [pid for pid, p in traced.items()
+                      if np.hypot(p['x'] - wx, p['y'] - wy) <= NEAR_PX / 2]
+        found.append({
+            'method': 'word', 'comp': comp, 'area': int(sizes[comp - 1]) if comp else 0,
+            'x': x, 'y': y, 'clearance': clear, 'traced': claims,
+            'near': [pid for pid, p in traced.items()
+                     if np.hypot(p['x'] - wx, p['y'] - wy) <= NEAR_PX],
+            '_options': options,
+        })
+    _ocr(found)
+
+    reads = pockets + found
+    for e in reads:
+        e['valid'] = valid(e['text'])
+    log(f'  {floor}: {len(pockets)} pockets and {len(found)} loose words examined')
     return reads
+
+
+def learn_templates(all_reads):
+    """The font, from every read tesseract was sure of, on every storey."""
+    t = gx.Templates()
+    for reads in all_reads.values():
+        for e in reads:
+            if e['valid'] and e['conf'] >= AGREE_CONF and e.get('_crop') is not None:
+                t.learn(e['_crop'], e['text'])
+    t.freeze()
+    log(f'templates: {len(t)} glyphs learned, held-out accuracy {t.heldout_accuracy():.1%}')
+    return t
+
+
+def second_opinion(floor, reads, templates):
+    """Fold the templates' opinion into each read's confidence. See AGREE_CONF."""
+    digits = FLOOR_DIGITS[floor]
+    traced = traced_rooms(floor)
+    extra = []
+    for e in reads:
+        e['tesseract'] = e['conf']
+        if e['valid']:
+            verdict, tdig, score = gx.second_opinion(templates, e['_crop'], e['text'])
+            e['opinion'], e['template'] = verdict, tdig
+            # The templates never learned the suffix letters, so on "288B" they
+            # vouch for the 288 and nothing else -- tesseract alone read that B,
+            # and on Main it read a B as an E. A suffix keeps tesseract's score.
+            if verdict == 'agree' and len(e['text']) == 3:
+                e['conf'] = max(e['conf'], AGREE_CONF)
+            elif verdict == 'dispute':
+                e['conf'] = min(e['conf'], DISPUTED_CONF)
+                # Put the templates' reading in front of a human as well, so the
+                # review shows both candidates rather than only the doubtful one.
+                alt = tdig + e['text'][3:]
+                if alt[0] in digits and ROOM_RE.match(alt):
+                    extra.append({**e, 'text': alt, 'conf': TEMPLATE_CONF,
+                                  'tesseract': 0.0, 'opinion': 'template'})
+            continue
+        # Tesseract found no room number at all. The templates may, but only
+        # the digits: they never learned the suffix letters.
+        best = None
+        for opt in e['_options']:
+            t = templates.read(opt)
+            if (t and not t[1] and t[0][0] in digits
+                    and t[2] >= gx.SURE_SCORE and t[3] >= gx.SURE_MARGIN
+                    and (best is None or t[2] > best[2])):
+                best = t
+        if best is None:
+            continue
+        text = best[0]
+        claimed = {(traced[pid].get('label') or pid) for pid in e['traced'] + e.get('near', [])}
+        e.update(text=text, valid=True, template=text,
+                 opinion='corroborated' if text in claimed else 'template',
+                 conf=CORROBORATED_CONF if text in claimed else TEMPLATE_CONF)
+        if text in claimed:
+            # The traced point that agrees is, by definition, claiming this read.
+            e['traced'] = sorted(set(e['traced']) | {pid for pid in e.get('near', [])
+                                                     if (traced[pid].get('label') or pid) == text})
+    reads.extend(extra)
+
+
+def settle_conflicts(reads, min_conf=MIN_APPLY_CONF):
+    """Two confident reads that cannot both be true are both demoted to review.
+
+    One number read confidently in two different rooms, or two different
+    numbers read confidently at one spot: at least one of each pair is wrong,
+    and nothing here says which. Picking the higher score would be a coin flip
+    dressed up as a decision -- in the 160s row on Lower it put 165 in 169's room.
+    """
+    sure = [e for e in reads if e['valid'] and e['conf'] >= min_conf]
+    bad = set()
+    for i, a in enumerate(sure):
+        for b in sure[i + 1:]:
+            d = np.hypot(a['x'] - b['x'], a['y'] - b['y'])
+            if (a['text'] == b['text'] and d > NEAR_PX) or (a['text'] != b['text'] and d < NEAR_PX / 3):
+                bad.update((id(a), id(b)))
+    for e in sure:
+        if id(e) in bad:
+            e['conf'] = min(e['conf'], TEMPLATE_CONF)
+            e['opinion'] = 'conflict'
 
 
 def _render(floor, reads):
     """A contact sheet of every read, for eyeballing what the reader saw."""
     out = os.path.join(plans.ASSETS, f'read-{floor}.png')
-    grey = np.array(Image.open(plans.page_path(floor)).convert('RGB'))
-    im = Image.fromarray(grey)
+    im = Image.open(plans.page_path(floor)).convert('RGB')
     from PIL import ImageDraw
     d = ImageDraw.Draw(im)
     for r in reads:
-        colour = (0, 150, 0) if r['valid'] else (200, 0, 0)
+        if not r['text']:
+            continue
+        colour = (0, 150, 0) if r['valid'] and r['conf'] >= MIN_APPLY_CONF else (200, 0, 0)
         d.ellipse([r['x'] - 9, r['y'] - 9, r['x'] + 9, r['y'] + 9], outline=colour, width=3)
-        if r['text']:
-            d.text((r['x'] + 12, r['y'] - 8), f"{r['text']} {r['conf']:.2f}", fill=colour)
+        d.text((r['x'] + 12, r['y'] - 8), f"{r['text']} {r['conf']:.2f}", fill=colour)
     im.save(out)
     log(f'  wrote {out}')
 
 
+# ------------------------------------------------------------- decisions ----
+def load_decisions():
+    try:
+        d = json.load(open(DECISIONS))
+    except OSError:
+        return {}
+    return {k: v for k, v in d.items() if k in plans.FLOORS}
+
+
+def _matches(entry, decision):
+    return (entry['text'] == decision['text']
+            and np.hypot(entry['x'] - decision['x'], entry['y'] - decision['y']) <= NEAR_PX * 2)
+
+
 # --------------------------------------------------------------- reports ----
-def reconcile(floor, reads):
+def reconcile(floor, reads, decisions=None):
     """Match what was read against what is shipped, and classify every room."""
     traced = traced_rooms(floor)
-    by_label = {}
-    for pid, p in traced.items():
-        by_label.setdefault(p.get('label') or pid, []).append(pid)
+    rejects = (decisions or {}).get('reject', [])
 
-    confirmed, corrected, found, unread = [], [], [], []
+    confirmed, corrected, found, unread, rejected = [], [], [], [], []
     seen = set()
     for r in reads:
         if not r['valid']:
+            continue
+        if any(_matches(r, d) for d in rejects):
+            rejected.append(r)
             continue
         claims = r['traced']
         labels = {traced[pid].get('label') or pid for pid in claims}
@@ -367,7 +592,11 @@ def reconcile(floor, reads):
             unread.append({'id': pid, 'label': p.get('label') or pid,
                            'x': int(p['x']), 'y': int(p['y'])})
     return {'confirmed': confirmed, 'corrected': corrected,
-            'found': found, 'unread': unread}
+            'found': found, 'unread': unread, 'rejected': rejected}
+
+
+def _public(e):
+    return {k: v for k, v in e.items() if not k.startswith('_')}
 
 
 def main(argv):
@@ -379,32 +608,48 @@ def main(argv):
             min_conf = float(a.split('=', 1)[1])
     floors = [a for a in argv if a in plans.FLOORS] or list(plans.FLOORS)
 
+    # The templates learn from every storey, so read them all before judging any.
+    reads = {}
+    try:
+        for floor in floors:
+            reads[floor] = read_floor(floor)
+    finally:
+        _save_cache()
+    templates = learn_templates(reads)
+
+    decisions = load_decisions()
     report = {}
     for floor in floors:
-        reads = read_floor(floor, render=render)
-        r = reconcile(floor, reads)
+        second_opinion(floor, reads[floor], templates)
+        settle_conflicts(reads[floor], min_conf)
+        if render:
+            _render(floor, reads[floor])
+        r = reconcile(floor, reads[floor], decisions.get(floor))
         report[floor] = r
-        valid = [x for x in reads if x['valid']]
-        log(f'  {floor}: {len(reads)} pockets examined, {len(valid)} room numbers read')
+        valid = [x for x in reads[floor] if x['valid']]
+        rejected = {id(x) for x in r['rejected']}
+        sure = {x['text'] for x in valid if x['conf'] >= min_conf and id(x) not in rejected}
+        log(f'  {floor}: {len(valid)} room numbers read, {len(sure)} distinct confidently')
         log(f'    confirmed {len(r["confirmed"])}  corrected {len(r["corrected"])}  '
-            f'new {len(r["found"])}  unread {len(r["unread"])}')
+            f'new {len(r["found"])}  unread {len(r["unread"])}  rejected {len(r["rejected"])}')
         for c in r['corrected']:
             log(f'      traced {"/".join(c["was"])} -> scan reads {c["text"]} '
-                f'(conf {c["conf"]:.2f}) at {c["x"]},{c["y"]}')
+                f'(conf {c["conf"]:.2f}, {c.get("opinion", "")}) at {c["x"]},{c["y"]}')
         if r['found']:
             log('      new: ' + ', '.join(f'{f["text"]}@{f["x"]},{f["y"]}' for f in r['found']))
 
     path = os.path.join(plans.ASSETS, 'read-report.json')
     with open(path, 'w') as fh:
-        json.dump(report, fh, indent=1)
+        json.dump({f: {k: ([_public(e) for e in v] if isinstance(v, list) else v)
+                       for k, v in r.items()} for f, r in report.items()}, fh, indent=1)
     log(f'wrote {os.path.relpath(path, plans.ROOT)}')
 
     write_app_report(report)
     if apply_changes:
-        apply_report(report, min_conf)
+        apply_report(report, min_conf, decisions)
 
 
-def apply_report(report, min_conf=MIN_APPLY_CONF):
+def apply_report(report, min_conf=MIN_APPLY_CONF, decisions=None):
     """Rebuild the numbered rooms of each floor from what the scan says.
 
     Not a per-point patch, which is the obvious implementation and is wrong. The
@@ -423,9 +668,16 @@ def apply_report(report, min_conf=MIN_APPLY_CONF):
     drawing says is somewhere else is worse than no point at all: it sends
     people to a specific wrong door, confidently.
 
+    Then the decisions file: every `place` entry is put where the reviewer put
+    it, as `scan-accepted` -- including over a confident read, because on WHERE
+    a room is, a person looking at the plan outranks a text anchor. A room
+    an editor accepted in the app keeps that source across a rebuild -- this
+    used to reset every kept point to `traced`, which threw the decision away.
+
     Named spaces (the Cafeteria, the Black Box Theater) are never touched. They
     carry a name rather than a number and the reader does not read them.
     """
+    decisions = decisions or {}
     for floor, r in report.items():
         path = os.path.join(plans.OUT_DIR, f'{floor}.json')
         d = json.load(open(path))
@@ -446,6 +698,8 @@ def apply_report(report, min_conf=MIN_APPLY_CONF):
                 if pid != entry['text']:
                     contested.add(pid)
 
+        places = {p['text']: p for p in decisions.get(floor, {}).get('place', [])}
+
         kept, replaced, displaced = [], [], []
         out = {}
         for pid, p in pts.items():
@@ -456,14 +710,18 @@ def apply_report(report, min_conf=MIN_APPLY_CONF):
             if not ROOM_RE.match(pid):
                 out[pid] = p
                 continue
+            if pid in places:
+                continue  # re-added below, where the reviewer put it
             if pid in best:
                 replaced.append(pid)
                 continue  # re-added below, from the scan
-            if pid in contested:
+            if pid in contested and p.get('source') != 'scan-accepted':
                 displaced.append(pid)
                 continue
             p = dict(p)
-            p['source'] = 'traced'
+            if p.get('source') != 'scan-accepted':
+                p['source'] = 'traced'
+                p.pop('confidence', None)
             out[pid] = p
             kept.append(pid)
 
@@ -477,6 +735,15 @@ def apply_report(report, min_conf=MIN_APPLY_CONF):
                 'confidence': entry['conf'],
             }
 
+        placed = []
+        for text, p in sorted(places.items()):
+            # A person who looked at the scan outranks the reader on WHERE a
+            # room is, even one the reader also read: a word read in a leaky
+            # pocket is anchored on its text, which can sit against a wall.
+            out[text] = {'x': p['x'], 'y': p['y'], 'kind': 'room', 'label': text,
+                         'source': 'scan-accepted'}
+            placed.append(text)
+
         d['points'] = out
         # An edge naming a point that no longer exists would break the graph.
         gone = set(pts) - set(out)
@@ -484,9 +751,10 @@ def apply_report(report, min_conf=MIN_APPLY_CONF):
             d['edges'] = [e for e in d['edges'] if e['a'] not in gone and e['b'] not in gone]
         with open(path, 'w') as fh:
             json.dump(d, fh, indent=1)
-        r['applied'] = {'fromScan': sorted(best), 'keptTraced': kept, 'displaced': displaced}
-        log(f'  {floor}: {len(best)} rooms from the scan, {len(kept)} traced rooms kept, '
-            f'{len(displaced)} displaced')
+        r['applied'] = {'fromScan': sorted(best), 'keptTraced': kept,
+                        'placed': placed, 'displaced': displaced}
+        log(f'  {floor}: {len(best)} rooms from the scan, {len(placed)} placed by review, '
+            f'{len(kept)} traced rooms kept, {len(displaced)} displaced')
         if displaced:
             log(f'    displaced (the scan reads a different number in their pocket): {displaced}')
 
