@@ -1,0 +1,393 @@
+{
+  "_about": [
+    "Verdicts on what tools/read_plan.py could not settle by itself. The reader re-reads",
+    "this on every run, so a decision survives regenerating the data; a click in the app",
+    "does not, until it is copied in here.",
+    "",
+    "reject: a read that is wrong. Matched by number, within 120 px of the spot, and",
+    "        dropped before anything is classified or applied.",
+    "place:  a room put where a person looking at the",
+    "        scan says it is. Applied as source 'scan-accepted', and overrides any traced",
+    "        point of the same number -- and outranks a confident read on WHERE the room is.",
+    "",
+    "Every entry below was checked by eye against a crop of the scan (by Claude, 2026-10-09): 'why' says what it showed."
+  ],
+  "lower": {
+    "reject": [
+      {
+        "text": "139",
+        "x": 2606,
+        "y": 1369,
+        "why": "Inside the Cafeteria; nothing is printed there."
+      }
+    ],
+    "place": [
+      {
+        "text": "122",
+        "x": 2112,
+        "y": 1601,
+        "why": "Printed below 124. Its traced point sat on the 124/122 wall and was removed as contradicted."
+      },
+      {
+        "text": "129",
+        "x": 2026,
+        "y": 1485,
+        "why": "Printed below 131. Its traced point sat on the 131/129 wall and was removed as contradicted."
+      },
+      {
+        "text": "101",
+        "x": 2375,
+        "y": 1250,
+        "why": "Traced point was off its room (on the room's top wall); moved onto the printed number."
+      },
+      {
+        "text": "103",
+        "x": 2365,
+        "y": 1510,
+        "why": "Traced point was off its room (in the open area beside it); moved onto the printed number."
+      },
+      {
+        "text": "118",
+        "x": 2387,
+        "y": 2018,
+        "why": "Traced point was off its room (on the small 116 label next door); moved onto the printed number."
+      },
+      {
+        "text": "127",
+        "x": 2025,
+        "y": 1532,
+        "why": "Traced point was off its room (on the 129/127 wall); moved onto the printed number."
+      },
+      {
+        "text": "149B",
+        "x": 1927,
+        "y": 1267,
+        "why": "Traced point was off its room (on its top wall); moved onto the printed number."
+      },
+      {
+        "text": "100C",
+        "x": 2645,
+        "y": 1300,
+        "why": "Traced point was off its room (outside the building); moved onto the printed number."
+      },
+      {
+        "text": "161",
+        "x": 1892,
+        "y": 1690,
+        "why": "Traced point was off its room (on the corridor wall); moved onto the printed number."
+      },
+      {
+        "text": "163",
+        "x": 1842,
+        "y": 1690,
+        "why": "Traced point was off its room (on the corridor wall); moved onto the printed number."
+      },
+      {
+        "text": "165",
+        "x": 1790,
+        "y": 1690,
+        "why": "Traced point was off its room (on the corridor wall); moved onto the printed number."
+      },
+      {
+        "text": "169",
+        "x": 1692,
+        "y": 1690,
+        "why": "Traced point was off its room (on the corridor wall); moved onto the printed number."
+      },
+      {
+        "text": "172",
+        "x": 1590,
+        "y": 1600,
+        "why": "Traced point was off its room (in the room next door); moved onto the printed number."
+      }
+    ]
+  },
+  "main": {
+    "reject": [
+      {
+        "text": "200E",
+        "x": 1894,
+        "y": 569,
+        "why": "The room is 280E; the 8 read as a 0."
+      },
+      {
+        "text": "288E",
+        "x": 1582,
+        "y": 1482,
+        "why": "The room is 288B; the B read as an E."
+      }
+    ],
+    "place": [
+      {
+        "text": "215",
+        "x": 2097,
+        "y": 1506,
+        "why": "Clearly printed 215. The traced '217' sat in this room."
+      },
+      {
+        "text": "217",
+        "x": 2054,
+        "y": 1640,
+        "why": "The 217 suite is below 215, among 217A-217H; its traced point was in 215."
+      },
+      {
+        "text": "210D",
+        "x": 1910,
+        "y": 1215,
+        "why": "Clearly printed; the templates confirm 210, the D is legible."
+      },
+      {
+        "text": "249",
+        "x": 930,
+        "y": 1540,
+        "why": "Read at the room's left wall; moved onto the printed number."
+      },
+      {
+        "text": "257G",
+        "x": 843,
+        "y": 1007,
+        "why": "Printed vertically. It was removed as contradicted; the traced '257E' sat on it."
+      },
+      {
+        "text": "257E",
+        "x": 843,
+        "y": 1050,
+        "why": "Directly below 257G; its traced point was one room high."
+      },
+      {
+        "text": "288B",
+        "x": 1580,
+        "y": 1468,
+        "why": "Read as 288E. The traced 288B was inside the Library."
+      },
+      {
+        "text": "288C",
+        "x": 1662,
+        "y": 1468,
+        "why": "Next to 288B. The traced 288C was inside the Library."
+      },
+      {
+        "text": "243",
+        "x": 1025,
+        "y": 1583,
+        "why": "Printed vertically below 241. Its traced point sat on the 241/243 wall and was removed as contradicted."
+      },
+      {
+        "text": "247",
+        "x": 970,
+        "y": 1587,
+        "why": "Traced point was off its room (on the 249/241 wall); moved onto the printed number."
+      },
+      {
+        "text": "248",
+        "x": 862,
+        "y": 1632,
+        "why": "Traced point was off its room (on the 250/248 wall); moved onto the printed number."
+      },
+      {
+        "text": "250",
+        "x": 862,
+        "y": 1565,
+        "why": "Traced point was off its room (in 250A); moved onto the printed number."
+      },
+      {
+        "text": "257",
+        "x": 715,
+        "y": 1080,
+        "why": "Traced point was off its room (on the 255/257 wall); moved onto the printed number."
+      },
+      {
+        "text": "257A",
+        "x": 745,
+        "y": 1130,
+        "why": "Traced point was off its room (in 257); moved onto the printed number."
+      },
+      {
+        "text": "257B",
+        "x": 792,
+        "y": 1110,
+        "why": "Traced point was off its room (about one room-width left); moved onto the printed number."
+      },
+      {
+        "text": "257C",
+        "x": 825,
+        "y": 1110,
+        "why": "Traced point was off its room (about one room-width left); moved onto the printed number."
+      },
+      {
+        "text": "257D",
+        "x": 855,
+        "y": 1110,
+        "why": "Traced point was off its room (about one room-width left); moved onto the printed number."
+      },
+      {
+        "text": "257F",
+        "x": 760,
+        "y": 1042,
+        "why": "Traced point was off its room (on its top wall); moved onto the printed number."
+      },
+      {
+        "text": "254F",
+        "x": 495,
+        "y": 1225,
+        "why": "Traced point was off its room (outside the building); moved onto the printed number."
+      },
+      {
+        "text": "254G",
+        "x": 537,
+        "y": 1185,
+        "why": "Traced point was off its room (outside the building); moved onto the printed number."
+      },
+      {
+        "text": "254H",
+        "x": 582,
+        "y": 1160,
+        "why": "Traced point was off its room (in the next room); moved onto the printed number."
+      },
+      {
+        "text": "254K",
+        "x": 570,
+        "y": 1237,
+        "why": "Traced point was off its room (on 254G); moved onto the printed number."
+      },
+      {
+        "text": "254L",
+        "x": 720,
+        "y": 1220,
+        "why": "Traced point was off its room (two rooms away); moved onto the printed number."
+      },
+      {
+        "text": "254D",
+        "x": 550,
+        "y": 1310,
+        "why": "Traced point was off its room (on 254C); moved onto the printed number."
+      }
+    ]
+  },
+  "upper": {
+    "reject": [
+      {
+        "text": "308",
+        "x": 2533,
+        "y": 1431,
+        "why": "This room is printed 306; tesseract read the 6 as an 8 (0.67)."
+      },
+      {
+        "text": "343",
+        "x": 1475,
+        "y": 1317,
+        "why": "This room is 343B; the suffix was lost."
+      },
+      {
+        "text": "384",
+        "x": 1475,
+        "y": 1317,
+        "why": "Same 343B, misread."
+      },
+      {
+        "text": "345",
+        "x": 1401,
+        "y": 1119,
+        "why": "The room is 348."
+      },
+      {
+        "text": "412",
+        "x": 813,
+        "y": 1236,
+        "why": "The room is 422."
+      },
+      {
+        "text": "310",
+        "x": 2404,
+        "y": 1986,
+        "why": "This room is 318 (both readers took the 8 for a 0); 310 is printed further north."
+      }
+    ],
+    "place": [
+      {
+        "text": "306",
+        "x": 2538,
+        "y": 1440,
+        "why": "Clearly printed. It was removed because its room was misread as 308."
+      },
+      {
+        "text": "308",
+        "x": 2448,
+        "y": 1440,
+        "why": "The room left of 306."
+      },
+      {
+        "text": "358",
+        "x": 1615,
+        "y": 1021,
+        "why": "Clearly printed below 356. It was removed as contradicted."
+      },
+      {
+        "text": "326",
+        "x": 1638,
+        "y": 1836,
+        "why": "Printed right of 325. Its traced point was 200 px away, on a wall corner by 330, and was removed as contradicted."
+      },
+      {
+        "text": "333",
+        "x": 1334,
+        "y": 1612,
+        "why": "Printed below 335. Its traced point sat on the 335/333 wall and was removed as contradicted."
+      },
+      {
+        "text": "309",
+        "x": 2500,
+        "y": 1865,
+        "why": "Traced point was off its room (in 311); moved onto the printed number."
+      },
+      {
+        "text": "311",
+        "x": 2500,
+        "y": 1960,
+        "why": "Traced point was off its room (outside the building); moved onto the printed number."
+      },
+      {
+        "text": "318",
+        "x": 2380,
+        "y": 1960,
+        "why": "Traced point was off its room (outside the building); moved onto the printed number."
+      },
+      {
+        "text": "319",
+        "x": 2100,
+        "y": 1957,
+        "why": "Traced point was off its room (outside the building); moved onto the printed number."
+      },
+      {
+        "text": "350",
+        "x": 1370,
+        "y": 1025,
+        "why": "Traced point was off its room (in 358); moved onto the printed number."
+      },
+      {
+        "text": "343B",
+        "x": 1475,
+        "y": 1295,
+        "why": "Traced point was off its room (in the unlabelled room above); moved onto the printed number."
+      },
+      {
+        "text": "343A",
+        "x": 1475,
+        "y": 1355,
+        "why": "Traced point was off its room (in the unlabelled room above); moved onto the printed number."
+      },
+      {
+        "text": "367",
+        "x": 1532,
+        "y": 1357,
+        "why": "Traced point was off its room (in the unlabelled room above 343B); moved onto the printed number."
+      },
+      {
+        "text": "425G",
+        "x": 450,
+        "y": 1555,
+        "why": "Traced point was off its room (in the next room); moved onto the printed number."
+      }
+    ]
+  }
+}

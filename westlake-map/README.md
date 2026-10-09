@@ -135,28 +135,80 @@ The rest is bookkeeping:
 
 **It reports, it does not overwrite.** Every room comes out tagged `confirmed`
 (scan and data agree), `corrected` (they disagree), `found` (a number in a pocket
-nothing claimed) or `unread`. Measured across all three sheets, every read that
-turned out to be a misread scored ≤ 0.33 and every correction that held up under
-inspection scored ≥ 0.50 — a real gap, which is what makes the 0.5 apply
-threshold defensible rather than a guess.
+nothing claimed) or `unread`. Applying is a whole-floor rebuild, not a per-point
+patch. Patching in place would relabel 216 to "214" while the point already called
+214 kept its name, and the floor would end up with two of them; the shift only
+resolves if the numbered set is rebuilt at once from the reads.
 
-Applying is a whole-floor rebuild, not a per-point patch. Patching in place would
-relabel 216 to "214" while the point already called 214 kept its name, and the
-floor would end up with two of them; the shift only resolves if the numbered set
-is rebuilt at once from the reads. Everything below the threshold goes into a
-review queue **inside the app** — Edit mode, *The scan isn't sure about these* —
-where each one is a place on the map you can jump to, look at, and accept with a
-click. Results:
+### Reading what the pockets miss
 
-| Floor | Confirmed | Corrected | Newly found | Left for review |
+The pocket trick only works when the pocket is sealed and the number floats free
+inside it. It fails in three ways, which between them were most of the misses:
+the number **touches a wall** (290D, 283D), the room **leaks** into its
+neighbours through a gap in the scan so the pocket is too big to be one room (the
+whole 226–234 row), or the text is **set at an angle** (the 254x wing runs at
+~35°). `tools/glyphs.py` comes at those from the ink instead: strip the long
+straight runs, keep the glyph-sized pieces whose surroundings are mostly open
+floor (a wall stub is surrounded by more wall), group them into words by
+spacing, and turn each word upright along the line through its glyph centres.
+
+### A second reader that learned the font from the map
+
+Tesseract has no prior that a room number is three digits in one stencil font.
+It read Upper's `306` as `308` at 0.67 — above the old apply threshold, in the
+wrong room — and the old claim that "every misread scored ≤ 0.33" did not
+survive that. But the map prints every digit in one font at one size, and the
+reads tesseract *is* sure of are a few hundred labelled examples of it. So the
+reader segments those into glyphs and classifies everything else by nearest
+neighbour against them: 138 learned glyphs, 99% held-out accuracy on digits.
+
+The two readers fail differently, so the rule is about agreement:
+
+| Opinion | Meaning | Confidence |
+| --- | --- | --- |
+| agree | both read the same digits | 0.75, applied |
+| corroborated | tesseract got nothing, the templates are sure, and a traced point already claims that number there | 0.6, applied |
+| dispute | the templates are sure of different digits | capped at 0.25, review |
+| template | the templates alone | 0.3, review |
+| conflict | one number read confidently in two rooms, or two numbers at one spot | 0.3, review |
+
+Agreement covers digits only. The templates never learned the suffix letters,
+so in `288B` they vouch for the `288` and tesseract alone read the `B` — as an
+`E`. A suffixed read keeps tesseract's own score.
+
+### Decisions survive a rebuild
+
+`tools/review-decisions.json` holds verdicts on what the reader cannot settle:
+`reject` a read that is wrong, `place` a room where someone looking at the scan
+says it is (applied as `scan-accepted`, and it wins over a confident read on
+*where* a room is, because a word read in a leaky pocket is anchored on its
+text). Every entry carries a `why`. Accepting a suggestion in the app is a
+click; copying it into this file is what makes it permanent. `apply` also no
+longer resets an editor-accepted room back to `traced`.
+
+Results, rooms per floor:
+
+| Floor | Read confidently (was) | Placed by review | Still traced | Review queue |
 | --- | --- | --- | --- | --- |
-| Lower | 11 | 2 | 6 | 31 |
-| Main | 38 | 13 | 14 | 47 |
-| Upper | 35 | 7 | 13 | 21 |
+| Lower | 25 (13) | 13 | 7 | 0 |
+| Main | 53 (44) | 24 | 31 | 0 |
+| Upper | 41 (31) | 14 | 13 | 0 |
+
+Every confident read and every placement was checked by eye against a crop of
+the scan; that check caught four misreads (two of them reads both readers agreed
+on, which is why agreement is 0.75 and not 1.0), and turned up traced points
+sitting on a wall, in the room next door, or outside the building — the 51
+placements fix those and restore the eight rooms that had been removed. What is
+still `traced` is either confirmed as near enough or genuinely ambiguous on the
+scan.
+
+Tesseract is the whole cost of the tool. Crops are read in parallel and cached
+by content in `private-source/ocr-cache.json`, so a full run is ~7 minutes the
+first time and well under one after that.
 
 ```
 python3 tools/plans.py MAPWestlake.pdf   # render the booklet into private-source/
-python3 tools/read_plan.py               # report only, writes nothing
+python3 tools/read_plan.py               # report only (rewrites scan-report.json)
 python3 tools/read_plan.py --apply       # act on the confident reads
 python3 tools/read_plan.py --render main # + a PNG of every read, for eyeballing
 ```
@@ -298,12 +350,10 @@ the tool was unsure about, `traced` when somebody placed it by eye and the scan
 has never confirmed it. Distances and times are estimates from one scale
 constant either way.
 
-**Eight rooms are missing rather than wrong.** Where the scan positively
-contradicted a traced point — the pocket it sat in is printed with a different
-number — and the reader could not read that room anywhere else, the point was
-removed. A point the drawing says is somewhere else is worse than no point at
-all: it sends people to a specific wrong door, confidently. They are listed in
-Edit mode under *The scan isn't sure about these*.
+**No rooms are missing.** Where the scan positively contradicts a traced point
+— the pocket it sat in is printed with a different number — the point is
+removed rather than left sending people to a specific wrong door. The eight that
+used to be missing for that reason are back, placed by review.
 
 **On a phone, the 3D camera doesn't know about the bottom sheet.** The 2D view
 aims a route at the strip of map the sheet leaves visible; the 3D view centres

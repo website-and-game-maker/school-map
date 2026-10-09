@@ -131,18 +131,18 @@ Nearest in line, in order:
    cannot do (stairs and restrooms are not on the official sheets at all), so
    registering it against the existing scans and reading the colours off it is
    the highest-value work outstanding. Nothing is built for it yet.
-2. **Work the scan-reader's review queue.** Edit mode lists every read the tool
-   was not confident enough to apply, and eight rooms that were removed because
-   the drawing positively contradicted them. Each is a couple of clicks. This is
-   the highest-value use of ten minutes in the project.
-3. **Raise the reader's recall.** It reads 139 of ~215 rooms confidently. The
-   misses are mostly small subdivided suites (254x, 257x, 290x) where the text is
-   below the glyph-size band, and rooms whose number touches a wall so it is not
-   a *hole* in the pocket. A self-calibrating classifier — cluster the glyphs the
-   map itself provides, name each cluster by tiling its members into a string
-   tesseract can read, then classify the rest by template — was prototyped and is
-   the obvious next step; per-glyph OCR on isolated characters is not (it returns
-   empty on 60% of them).
+2. **The scan-reader's review queue is empty.** Every read the tool was unsure
+   about, and the eight rooms it had removed, was settled by eye against the
+   scan and recorded in `tools/review-decisions.json`, which the reader honours
+   on every run. New doubts go there, not only into a click in the app.
+3. **Recall: 119 rooms read confidently, up from 88.** `tools/glyphs.py` finds
+   numbers outside sealed pockets (touching walls, leaky rooms, the 35° 254x
+   wing) and supplies a second reader learned from the map's own font; a read
+   applies when both agree. What is left `traced` (51 rooms) is mostly small
+   suites (250x, 254x, 257x, 289x, 290x) whose labels are below the glyph band
+   or ambiguous on the scan. The templates know digits only; teaching them the
+   suffix letters is the next step, and would need confident suffixed reads to
+   learn from (there are four).
 4. **Fly-the-route camera and 3D labels** — both designed in detail, neither
    built. The camera is specified as a low drone at ~22 ft, not a first-person
    walk: at eye height you see nothing but wall and lose the room numbers on the
