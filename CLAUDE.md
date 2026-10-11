@@ -44,7 +44,11 @@ invalidates `PX_PER_FOOT`, `align3d.json` and every traced point at once.
   into sentences and owns `PX_PER_FOOT`, the single scale calibration.
   `access.ts` gates the editing tools, `alignment.ts` nudges storeys onto each
   other, `scanReview.ts` surfaces what the plan reader was unsure about, and
-  `feedback.ts` turns a sentence of feedback into a prompt.
+  `feedback.ts` turns a sentence of feedback into a prompt. `schedule.ts` is
+  "My schedule": a student's rooms in order, saved in localStorage, and the
+  day's walks between them, timed by the same `route()` and `buildDirections()`
+  as an ordinary search (walks over `PASSING_PERIOD_MINUTES` are flagged).
+  Clicking a walk in `components/SchedulePanel.tsx` just sets From and To.
 - `src/three/` — the 3D view. `units.ts` and `placement.ts` are the coordinate
   foundation — `units.ts` also owns storey spacing and the ghost-opacity curve
   that fades unfocused floors as the camera tilts; `walls.ts` greedy-meshes
@@ -147,10 +151,6 @@ Nearest in line, in order:
    built. The camera is specified as a low drone at ~22 ft, not a first-person
    walk: at eye height you see nothing but wall and lose the room numbers on the
    floor, which are the whole advantage.
-5. **Schedule-based routing.** Enter your class periods once and get the day's
-   transitions. Page 2 of the tour map is exactly this, hand-drawn by a student,
-   which is good evidence it is the feature that would make people who already
-   know the building open the app.
 
 Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
 

@@ -436,11 +436,13 @@ src/
     MapCanvas.tsx          — plan image + SVG overlay: route, arrows, pins,
                              restrooms, and edit-mode interaction
     SearchBox.tsx          — autocomplete with keyboard nav, used for both ends
+    SchedulePanel.tsx      — "My schedule": enter rooms once, list the day's walks
   lib/
     nav.ts                 — decodes the bit-packed navigation grids
     router.ts              — the router: grid Dijkstra across floors
     directions.ts          — turn-by-turn steps, distance, time
     search.ts              — one index over rooms/entrances/landmarks/restrooms
+    schedule.ts            — saved class schedule -> timed walks between classes
     floorAlign.ts          — fits a transform between floor pages via entrances
     stairsFromMarks.ts     — links stair markers across floors
     save.ts                — save-to-disk (dev) + download-JSON helpers
@@ -480,5 +482,7 @@ for landmarks and entrances, and a **dev-only alignment overlay** so the storey
 registration can be finished by hand in about ten minutes.
 
 Further out: photo walkthroughs along a route, live hallway traffic between
-passing periods, and class/teacher search. The ads idea is worth a conversation
+passing periods, and teacher search. (Class-schedule routing — enter your rooms
+once and get the day's walks, each timed and flagged if it is longer than a
+7-minute passing period — is built: "My schedule" in the side panel.) The ads idea is worth a conversation
 with the school before any of it gets built.

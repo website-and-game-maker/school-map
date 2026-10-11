@@ -8,6 +8,7 @@ const MapCanvas3D = lazy(() => import("./components/MapCanvas3D"));
 import SearchBox from "./components/SearchBox";
 import EditorKeyDialog from "./components/EditorKeyDialog";
 import FeedbackPanel from "./components/FeedbackPanel";
+import SchedulePanel from "./components/SchedulePanel";
 import { FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
 import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
 import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
@@ -185,7 +186,19 @@ export default function App() {
     return computeRoute(floors, stairs, starts, ends, PX_PER_FOOT);
   }, [floors, stairs, fromItem, toItem, endpointsFor, editMode]);
 
-  const legs = useMemo(() => routeResult?.legs ?? [], [routeResult]);
+  // The same From/To → route step as above, for the schedule panel to time
+  // each of the day's walks without a second copy of the routing rules.
+  const routeBetween = useCallback(
+    (a: SearchItem, b: SearchItem) => {
+      const starts = endpointsFor(a);
+      const ends = endpointsFor(b);
+      if (starts.length === 0 || ends.length === 0) return null;
+      return computeRoute(floors, stairs, starts, ends, PX_PER_FOOT);
+    },
+    [floors, stairs, endpointsFor]
+  );
+
+  const legs =useMemo(() => routeResult?.legs ?? [], [routeResult]);
   const segments = legs;
   const [segIndex, setSegIndex] = useState(0);
 
@@ -627,6 +640,20 @@ export default function App() {
               </button>
             </div>
           )}
+
+          <SchedulePanel
+            searchIndex={searchIndex}
+            floorLabel={floorTagFor}
+            routeBetween={routeBetween}
+            activeFrom={fromItem?.key ?? null}
+            activeTo={toItem?.key ?? null}
+            onShow={(a, b) => {
+              setFromItem(a);
+              setFromQuery(a.label);
+              setToItem(b);
+              setToQuery(b.label);
+            }}
+          />
         </>
       )}
 
@@ -868,7 +895,6 @@ export default function App() {
           <p className="roadmap-title">Coming later</p>
           <ul className="chip-list">
             <li>Fly the route</li>
-            <li>Class schedule routing</li>
             <li>Teacher search</li>
             <li>Photo walkthroughs</li>
           </ul>
