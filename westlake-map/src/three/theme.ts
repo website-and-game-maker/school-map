@@ -66,6 +66,42 @@ export const CAMERA = {
   maxDistance: 2600,
 } as const;
 
+/**
+ * Fly-the-route camera. Feet, seconds, and feet per second.
+ *
+ * A low drone, not a first-person walk: at eye height (5 ft) every frame is a
+ * corridor wall and the room numbers printed on the floor texture — the one
+ * thing this view has that a photo would not — are lost. 22 ft is about two
+ * wall heights: high enough to see over the walls into the rooms either side,
+ * low enough that a room number still reads at the bottom of the frame.
+ *
+ * `trail` + `lookAhead` put the camera ~66 ft from what it looks at, at ~19°
+ * down. Both are chosen to sit inside OrbitControls' own limits (min distance
+ * 60, polar ≤ 1.4 rad), so handing the camera back after a drag never makes
+ * it jump to satisfy a constraint.
+ */
+export const FLY = {
+  heightFt: 22,
+  trailFt: 30,
+  lookAheadFt: 32,
+  /** How far ahead along the path the heading aims. Longer than a fillet, so
+   *  the camera starts turning before the corner rather than at it. */
+  headingLookFt: 45,
+  /** ≈ 3 s per 100 ft: eight times walking pace (directions.ts walks at
+   *  4 ft/s), slow enough to read a room number, quick enough that a
+   *  600 ft route is a 20-second watch rather than a chore. */
+  speedFtPerS: 32,
+  /** Time constants for the damped heading and position, seconds. */
+  headingTauS: 0.55,
+  positionTauS: 0.22,
+  /** Accelerate off the start and settle onto the destination. */
+  rampS: 1.1,
+  introS: 1.6,
+  outroS: 1.4,
+  /** Reduced motion: how long each direction step is held before cutting. */
+  reducedHoldS: 2.6,
+} as const;
+
 export function prefersReducedMotion(): boolean {
   return (
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches

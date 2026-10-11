@@ -61,6 +61,10 @@ export interface Directions {
   totalFeet: number;
   minutes: number;
   flights: number;
+  /** The names the two ends were given, kept so the 3D view can label them
+   *  with exactly the words the panel uses rather than re-deriving its own. */
+  startLabel: string;
+  endLabel: string;
 }
 
 function bearing(a: [number, number], b: [number, number]): number {
@@ -209,7 +213,7 @@ export function buildDirections(
   const firstLeg = legs[0];
   const lastLeg = legs[legs.length - 1];
   if (!firstLeg || !lastLeg) {
-    return { steps, totalFeet: 0, minutes: 0, flights: 0 };
+    return { steps, totalFeet: 0, minutes: 0, flights: 0, startLabel, endLabel };
   }
 
   steps.push({
@@ -289,5 +293,7 @@ export function buildDirections(
     totalFeet: Math.round(totalFeet),
     minutes: Math.max(1, Math.round(seconds / 60)),
     flights,
+    startLabel,
+    endLabel,
   };
 }

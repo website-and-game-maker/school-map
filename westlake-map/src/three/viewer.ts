@@ -22,6 +22,7 @@ import { FLOOR_ORDER } from "../data/floors";
 import {
   DEFAULT_ELEVATION_DEG,
   FLOOR_INDEX,
+  GHOST_WALL_FACTOR,
   SPREAD,
   dimensionForElevation,
   ghostOpacityForDimension,
@@ -35,11 +36,15 @@ import { buildSlabGeometry } from "./slab";
 import { TextureCache } from "./textures";
 import { liftRoute, type Route3D } from "./routeLift";
 import { buildRouteObject, type RouteObject } from "./routeObject";
+import { RouteFlight, type FlightPose } from "./flight";
+import { LabelLayer, labelSpecs } from "./labels";
 import {
   CAMERA,
+  FLY,
   clamp,
   createMaterials,
   disposeMaterials,
+  easeInOutCubic,
   isCoarsePointer,
   prefersReducedMotion,
   type Materials,
@@ -80,6 +85,17 @@ export interface Viewer3DCallbacks {
   /** Fired when the camera settles on a storey the app is not showing yet. */
   onFocusFloor?: (f: FloorId) => void;
   onFatal?: (reason: string) => void;
+  /** Fly-the-route state, for the bridge's Fly / Pause / Stop buttons. */
+  onFlightChange?: (state: FlightState) => void;
+}
+
+export type FlightState = "idle" | "flying" | "paused";
+
+/** A scripted camera move: the glide back from a flight to the route overview. */
+interface CameraTween {
+  from: FlightPose;
+  to: FlightPose;
+  t: number;
 }
 
 interface FloorParts {
@@ -141,6 +157,18 @@ export class MapViewer3D {
   /** Suppresses auto-focus while the camera is being moved by the app itself. */
   private cameraDriven = false;
 
+  private flight: RouteFlight | null = null;
+  private flightState: FlightState = "idle";
+  private tween: CameraTween | null = null;
+  /** The storey last asked for while flying, so one change is asked for once
+   *  rather than every frame until the app's answer comes back as a prop. */
+  private flightFloorAsked: FloorId | null = null;
+
+  private labels: LabelLayer;
+  /** Canvas size in CSS px, cached: reading clientWidth every frame forces layout. */
+  private viewW: number;
+  private viewH: number;
+
   private onVisibility = () => {
     this.hidden = document.visibilityState === "hidden";
     this.invalidate();
@@ -163,6 +191,16 @@ export class MapViewer3D {
     this.applyFloorStates();
     this.invalidate();
   };
+  /**
+   * Any drag, pinch, pan or wheel on the map takes the camera back. A flight
+   * that fights the user's hand is worse than no flight, and the gesture
+   * itself says what they want to look at instead — so the camera stays
+   * exactly where they grabbed it, with no reframe.
+   */
+  private onUserGesture = () => {
+    this.tween = null;
+    if (this.flight) this.endFlight(false);
+  };
 
   constructor(host: HTMLElement, props: Viewer3DProps, cb: Viewer3DCallbacks) {
     this.host = host;
@@ -172,6 +210,8 @@ export class MapViewer3D {
 
     const w = Math.max(1, host.clientWidth);
     const h = Math.max(1, host.clientHeight);
+    this.viewW = w;
+    this.viewH = h;
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.coarse, // on phones the pixel ratio buys more than MSAA
@@ -190,6 +230,8 @@ export class MapViewer3D {
     this.renderer.shadowMap.enabled = !this.coarse;
     this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
     host.appendChild(this.renderer.domElement);
+    // After the canvas, so the labels sit over it in document order too.
+    this.labels = new LabelLayer(host);
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, w / h, CAMERA.near, CAMERA.far);
@@ -209,6 +251,7 @@ export class MapViewer3D {
     this.controls.addEventListener("change", this.onOrbitChange);
     // Auto-focus: the storey the camera is aimed at becomes the active one.
     this.controls.addEventListener("end", this.pickFocusFromCamera);
+    this.controls.addEventListener("start", this.onUserGesture);
 
     this.setupLights();
     this.setupGround();
@@ -218,6 +261,7 @@ export class MapViewer3D {
     this.applyFloorStates();
     this.syncStairColumns();
     this.syncRoute();
+    this.syncLabels();
     this.applyViewOffset(w, h);
     this.resetView(); // after the floors, so it can frame the real model
 
@@ -442,6 +486,12 @@ export class MapViewer3D {
 
   // ------------------------------------------------------------ floor state
 
+  /** How visible the unfocused storeys are at the current tilt. Shared with
+   *  the labels, so a storey's names fade exactly as its walls do. */
+  private ghostOpacity(): number {
+    return ghostOpacityForDimension(dimensionForElevation(this.currentElevationDeg()));
+  }
+
   private applyFloorStates(): void {
     const activeIdx = FLOOR_INDEX[this.props.activeFloor];
     // Looking straight down, the storeys are all at the same height, so the
@@ -450,7 +500,7 @@ export class MapViewer3D {
     // also what makes "flat" read as a plan of ONE floor rather than a bad 3D
     // view — and back in the moment the drag tilts away from it, since this
     // is read straight off the camera's own elevation now.
-    const ghost = ghostOpacityForDimension(dimensionForElevation(this.currentElevationDeg()));
+    const ghost = this.ghostOpacity();
 
     // Every storey is always on screen. Picking a floor changes *emphasis*, not
     // visibility: this is a map of a three-storey building, and hiding two of
@@ -479,7 +529,7 @@ export class MapViewer3D {
       parts.slabMaterial.needsUpdate = true;
 
       for (const m of parts.wallMaterials) {
-        m.opacity = focus ? 1 : ghost * 0.72;
+        m.opacity = focus ? 1 : ghost * GHOST_WALL_FACTOR;
         m.transparent = !focus;
         m.depthWrite = focus;
         m.needsUpdate = true;
@@ -515,6 +565,7 @@ export class MapViewer3D {
     this.syncStairColumns();
     this.builtRouteKey = "";
     this.syncRoute();
+    this.syncLabels();
     this.invalidate();
   }
 
@@ -637,6 +688,10 @@ export class MapViewer3D {
     const spreadChanged = Math.abs(this.builtRouteSpread - this.spread) > 0.5;
     if (route && routeKey === this.builtRouteKey && !spreadChanged) return;
 
+    // The flight holds the old spine; following it now would fly a route that
+    // is no longer drawn. Whatever replaced it reframes the camera itself.
+    if (this.flight) this.endFlight(false);
+    this.tween = null;
     if (this.routeObject) {
       this.scene.remove(this.routeObject.group);
       this.routeObject.dispose();
@@ -662,10 +717,15 @@ export class MapViewer3D {
 
   /** Frame the whole route, or the building when there isn't one. */
   frameRoute(): void {
-    if (!this.route3d) {
-      this.resetView();
-      return;
-    }
+    const pose = this.routeFramePose();
+    if (pose) this.placeCameraPose(pose);
+    else this.resetView();
+  }
+
+  /** Where `frameRoute` puts the camera, without putting it there — so the end
+   *  of a flight can glide to it instead of cutting. */
+  private routeFramePose(): FlightPose | null {
+    if (!this.route3d) return null;
     const box = new THREE.Box3();
     const v = new THREE.Vector3();
     const pts = this.route3d.points;
@@ -678,7 +738,10 @@ export class MapViewer3D {
       CAMERA.minDistance,
       CAMERA.maxDistance
     );
-    this.placeCamera(centre, dist, DEFAULT_ELEVATION_DEG, CAMERA.overviewAzimuthDeg);
+    return {
+      target: centre,
+      position: this.orbitPosition(centre, dist, DEFAULT_ELEVATION_DEG, CAMERA.overviewAzimuthDeg),
+    };
   }
 
   /** The centre of the built model, not the page origin — the building only
@@ -746,17 +809,166 @@ export class MapViewer3D {
     }
   }
 
-  private placeCamera(target: THREE.Vector3, dist: number, elevDeg: number, azDeg: number): void {
+  private orbitPosition(
+    target: THREE.Vector3,
+    dist: number,
+    elevDeg: number,
+    azDeg: number
+  ): THREE.Vector3 {
     const el = (elevDeg * Math.PI) / 180;
     const az = (azDeg * Math.PI) / 180;
-    this.controls.target.copy(target);
-    this.camera.position.set(
+    return new THREE.Vector3(
       target.x + dist * Math.cos(el) * Math.sin(az),
       target.y + dist * Math.sin(el),
       target.z + dist * Math.cos(el) * Math.cos(az)
     );
+  }
+
+  private placeCamera(target: THREE.Vector3, dist: number, elevDeg: number, azDeg: number): void {
+    this.placeCameraPose({ target, position: this.orbitPosition(target, dist, elevDeg, azDeg) });
+  }
+
+  private placeCameraPose(pose: FlightPose): void {
+    this.controls.target.copy(pose.target);
+    this.camera.position.copy(pose.position);
     this.camera.updateProjectionMatrix();
     this.controls.update();
+    this.applyFloorStates();
+    this.invalidate();
+  }
+
+  // ---------------------------------------------------------------- flight
+
+  /**
+   * Fly the current route as a low drone (see `FLY` in theme.ts and
+   * flight.ts). The camera is driven directly while it runs: OrbitControls'
+   * own update() is skipped, because its distance and polar clamps would
+   * fight a scripted pose, and it takes over again the moment anyone touches
+   * the map.
+   *
+   * With reduced motion it does not glide: it cuts from one direction step to
+   * the next, holding each, and cuts back to the overview at the end.
+   */
+  startFlight(): void {
+    if (this.disposed || !this.route3d || this.route3d.totalFt <= 0) return;
+    this.tween = null;
+    this.flight = new RouteFlight(
+      this.route3d,
+      { position: this.camera.position.clone(), target: this.controls.target.clone() },
+      this.reducedMotion
+    );
+    this.flightFloorAsked = null;
+    this.setFlightState("flying");
+    // Start on the storey the route starts on, whatever the user was reading.
+    this.askFloor(this.route3d.legs[0].floor);
+    this.invalidate();
+  }
+
+  pauseFlight(): void {
+    if (this.flight && this.flightState === "flying") this.setFlightState("paused");
+  }
+
+  resumeFlight(): void {
+    if (this.flight && this.flightState === "paused") this.setFlightState("flying");
+  }
+
+  /** Stop and show the whole route again — the Stop button, as opposed to a
+   *  drag, which hands the camera back where it is. */
+  stopFlight(): void {
+    if (this.flight) this.endFlight(true);
+  }
+
+  private endFlight(reframe: boolean): void {
+    this.flight = null;
+    this.flightFloorAsked = null;
+    this.setFlightState("idle");
+    if (!reframe) return;
+    const to = this.routeFramePose();
+    if (!to) return;
+    if (this.reducedMotion) {
+      this.placeCameraPose(to);
+    } else {
+      this.tween = {
+        from: { position: this.camera.position.clone(), target: this.controls.target.clone() },
+        to,
+        t: 0,
+      };
+    }
+  }
+
+  private setFlightState(state: FlightState): void {
+    if (state === this.flightState) return;
+    this.flightState = state;
+    this.cb.onFlightChange?.(state);
+  }
+
+  private askFloor(floor: FloorId): void {
+    if (floor === this.props.activeFloor || floor === this.flightFloorAsked) return;
+    this.flightFloorAsked = floor;
+    this.cb.onFocusFloor?.(floor);
+  }
+
+  /** Point the camera at a pose without going through OrbitControls. */
+  private applyPose(pose: FlightPose): void {
+    this.camera.position.copy(pose.position);
+    this.controls.target.copy(pose.target);
+    this.camera.lookAt(pose.target);
+    // The ghost fade reads the camera's elevation, and nothing fires the
+    // controls' "change" event while the camera is scripted.
+    this.applyFloorStates();
+    this.invalidate();
+  }
+
+  /**
+   * The active storey follows the drone: it is the highest one the camera is
+   * above. Keyed to the camera rather than to the route point it follows,
+   * because on a riser the camera passes a slab after the route does — going
+   * up, the storey above stays a ghost until the camera is through it, so the
+   * picture is never the underside of an opaque floor.
+   */
+  private followFloorInFlight(): void {
+    const y = this.camera.position.y;
+    let floor: FloorId = FLOOR_ORDER[0];
+    for (const f of FLOOR_ORDER) if (storeyY(f, this.spread) <= y - 1) floor = f;
+    this.askFloor(floor);
+  }
+
+  private stepFlight(dt: number): void {
+    const flight = this.flight;
+    if (!flight || this.flightState !== "flying") return;
+    this.applyPose(flight.step(dt));
+    if (!flight.descending) this.followFloorInFlight();
+    if (flight.done) this.endFlight(true);
+  }
+
+  private stepTween(dt: number): void {
+    const tw = this.tween;
+    if (!tw) return;
+    tw.t = Math.min(1, tw.t + dt / FLY.outroS);
+    const e = easeInOutCubic(tw.t);
+    this.applyPose({
+      position: tw.from.position.clone().lerp(tw.to.position, e),
+      target: tw.from.target.clone().lerp(tw.to.target, e),
+    });
+    if (tw.t >= 1) {
+      this.tween = null;
+      this.controls.update(); // hand back with OrbitControls' state in sync
+    }
+  }
+
+  // ---------------------------------------------------------------- labels
+
+  private syncLabels(): void {
+    const d = this.props.directions;
+    this.labels.setLabels(
+      labelSpecs(
+        this.props.floors,
+        this.placements,
+        this.spread,
+        this.route3d,
+        d ? { start: d.startLabel, end: d.endLabel } : null
+      )
+    );
     this.invalidate();
   }
 
@@ -776,7 +988,9 @@ export class MapViewer3D {
     const floorChanged = prev.activeFloor !== next.activeFloor;
     if (floorChanged) {
       this.applyFloorStates();
-      this.lookAtFloor(next.activeFloor);
+      // In flight the camera is on the route, and the floor is following it
+      // rather than the other way round.
+      if (!this.flight) this.lookAtFloor(next.activeFloor);
       for (const f of FLOOR_ORDER) void this.loadFloorTexture(f);
       this.invalidate();
     }
@@ -788,6 +1002,13 @@ export class MapViewer3D {
       this.syncRoute();
       this.applyFloorStates();
       this.frameRoute();
+    }
+    if (
+      prev.routeKey !== next.routeKey ||
+      prev.floors !== next.floors ||
+      prev.directions !== next.directions
+    ) {
+      this.syncLabels();
     }
 
     if (prev.obscuredBottom !== next.obscuredBottom) {
@@ -805,6 +1026,8 @@ export class MapViewer3D {
       const w = this.host.clientWidth;
       const h = this.host.clientHeight;
       if (w === 0 || h === 0) return; // the bottom sheet is mid-transition
+      this.viewW = w;
+      this.viewH = h;
       this.renderer.setSize(w, h, false);
       this.applyViewOffset(w, h);
       this.invalidate();
@@ -819,14 +1042,30 @@ export class MapViewer3D {
     const animating = this.routeObject !== null && !this.reducedMotion;
     if (animating) this.routeObject?.update(dt);
 
+    // A flight, or the glide back from one, drives the camera itself and marks
+    // the frame dirty, so it costs frames only while one is running.
+    // OrbitControls stays out of it until then — see startFlight().
+    const scripted = this.flight !== null || this.tween !== null;
+    this.stepFlight(dt);
+    this.stepTween(dt);
+
     // controls.update() returns true while damping is still settling. The
     // previous guard tested `enableDamping`, which is a constant true, so the
     // early-out could never fire and a still scene redrew every frame — the
     // whole point of rendering on demand.
-    const settling = this.controls.update();
+    const settling = scripted ? false : this.controls.update();
     if (!this.dirty && !animating && !settling) return;
 
     this.renderer.render(this.scene, this.camera);
+    // Labels are projected only on frames that are actually drawn, so a still
+    // map moves no DOM either.
+    this.labels.update(
+      this.camera,
+      this.viewW,
+      this.viewH,
+      this.props.activeFloor,
+      this.ghostOpacity()
+    );
     this.dirty = false;
   };
 
@@ -839,7 +1078,11 @@ export class MapViewer3D {
     this.renderer.domElement.removeEventListener("webglcontextlost", this.onContextLost);
     this.controls.removeEventListener("change", this.onOrbitChange);
     this.controls.removeEventListener("end", this.pickFocusFromCamera);
+    this.controls.removeEventListener("start", this.onUserGesture);
     this.controls.dispose();
+    this.flight = null;
+    this.tween = null;
+    this.labels.dispose();
 
     if (this.routeObject) {
       this.scene.remove(this.routeObject.group);
