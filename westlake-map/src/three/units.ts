@@ -114,6 +114,10 @@ export function ghostOpacityForDimension(dim: number): number {
   return 0.72 * (t * t * (3 - 2 * t));
 }
 
+/** An unfocused storey's walls are drawn at ghost × this, a shade fainter than
+ *  its slab so the plan stays the thing you read. Its labels use it too. */
+export const GHOST_WALL_FACTOR = 0.72;
+
 /** World Y of a storey's slab top. */
 export function storeyY(floor: FloorId, spread: number): number {
   return FLOOR_INDEX[floor] * spread;

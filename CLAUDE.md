@@ -55,7 +55,13 @@ invalidates `PX_PER_FOOT`, `align3d.json` and every traced point at once.
   the wall geometry; `stairColumns.ts` ties the storeys together visibly;
   `viewer.ts` owns the scene and every three.js object, including the camera
   tilt itself, which is read straight off the OrbitControls drag rather than
-  driven by a separate control.
+  driven by a separate control. `flight.ts` is the fly-the-route camera — a
+  low drone at 28 ft (`FLY` in `theme.ts`), deliberately not a first-person
+  walk, because at eye height you see nothing but wall and lose the room
+  numbers on the floor. Any drag on the map stops it and hands the camera
+  back. `labels.ts` puts HTML labels on entrances, landmarks and the route's
+  two ends, greedily culled so they never overlap; rooms are not labelled,
+  because the floor texture already prints their numbers.
 - `src/data/floors/` — traced room positions, the nav grids, the wall geometry,
   and the per-storey 3D placement.
 - `tools/` — the Python that turns the scanned plans into all of the above.
@@ -147,10 +153,6 @@ Nearest in line, in order:
    or ambiguous on the scan. The templates know digits only; teaching them the
    suffix letters is the next step, and would need confident suffixed reads to
    learn from (there are four).
-4. **Fly-the-route camera and 3D labels** — both designed in detail, neither
-   built. The camera is specified as a low drone at ~22 ft, not a first-person
-   walk: at eye height you see nothing but wall and lose the room numbers on the
-   floor, which are the whole advantage.
 
 Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
 

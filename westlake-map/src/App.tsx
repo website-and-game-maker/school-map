@@ -894,7 +894,6 @@ export default function App() {
 
           <p className="roadmap-title">Coming later</p>
           <ul className="chip-list">
-            <li>Fly the route</li>
             <li>Teacher search</li>
             <li>Photo walkthroughs</li>
           </ul>

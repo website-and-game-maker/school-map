@@ -475,11 +475,12 @@ tools/
 
 ## Later
 
-Nearest in line for the 3D view: a **fly-the-route** camera (a low drone at ~22
-ft, not a first-person walk — at eye height you would see nothing but wall and
-lose the room numbers on the floor, which are the whole advantage), **labels**
-for landmarks and entrances, and a **dev-only alignment overlay** so the storey
-registration can be finished by hand in about ten minutes.
+Nearest in line for the 3D view: a **dev-only alignment overlay** so the storey
+registration can be finished by hand in about ten minutes. (The **fly-the-route**
+camera — a low drone at 28 ft, not a first-person walk, because at eye height you
+would see nothing but wall and lose the room numbers on the floor — and
+**labels** for landmarks, entrances and the route's two ends are built:
+`src/three/flight.ts` and `src/three/labels.ts`.)
 
 Further out: photo walkthroughs along a route, live hallway traffic between
 passing periods, and teacher search. (Class-schedule routing — enter your rooms

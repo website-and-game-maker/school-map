@@ -832,6 +832,75 @@ button { font-family: inherit; }
   height: 100%;
 }
 
+/* ---------------- 3D labels ---------------------------------------------- */
+/* Positioned by the viewer, one translate per label per drawn frame. Real
+   text at a fixed size, so it is crisp at any zoom; see src/three/labels.ts. */
+
+.labels-3d {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.label-3d {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 5px rgba(28, 21, 18, 0.12);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+/* Entrances are how you get in, so they are the one place label in colour. */
+.label-3d.tier-entrance { color: #8a6400; border-color: #ecd9a8; }
+.label-3d.tier-landmark { color: #4a4642; font-weight: 500; }
+/* The route ends match their markers in the scene and the pins in 2D. */
+.label-3d.tier-start { background: var(--maroon); border-color: var(--maroon); color: #fff; }
+.label-3d.tier-end { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 12.5px; }
+
+/* ---------------- fly the route (bottom left of the map) ----------------- */
+/* `bottom` is set inline from the phone sheet's height, so it clears it. */
+
+.fly-controls {
+  position: absolute;
+  left: 16px;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+}
+
+.fly-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 3px 14px rgba(28, 21, 18, 0.14);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fly-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fly-btn:hover { filter: brightness(0.96); }
+
+@media (max-width: 760px) {
+  .fly-controls { left: 12px; }
+  .fly-btn { height: 40px; }
+}
+
 /* ---------------- the pan hint (bottom right of the map) ----------------- */
 /* Drag already tilts the view — that's OrbitControls' own rotate gesture, and
    it needs no explanation. Panning is the gesture that isn't the obvious
