@@ -47,7 +47,11 @@ export class TextureCache {
       // geometry, so the scan never reaches the browser.
       const { w, h } = roomsOf(floor);
       const scale = maxEdge / Math.max(w, h);
-      const canvas = renderFloorPlan(floor, { scale, labels: scale > 0.35 });
+      // No baked labels: the map draws them as screen-space text (labels.ts),
+      // which stays the same size at every zoom the way a street map's does.
+      // Text baked into the floor grows and shrinks with it and turns to
+      // mush at a tilt.
+      const canvas = renderFloorPlan(floor, { scale, labels: false });
       const tex = new THREE.Texture(canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.generateMipmaps = true;

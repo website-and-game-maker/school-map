@@ -8,6 +8,9 @@
   --accent: #16776a;
   --accent-soft: #e8f4f1;
   --shadow: 0 10px 30px rgba(28, 21, 18, 0.12);
+  /* The ground around the building, in the map and behind it. Kept in step
+     with INK.paper (floorPlan.ts) and PALETTE.ground (three/theme.ts). */
+  --map-ground: #eceae6;
 }
 
 * { box-sizing: border-box; }
@@ -817,7 +820,7 @@ button { font-family: inherit; }
 /* The backdrop is a CSS gradient, not a sky sphere: resolution-independent,
    zero shader cost, and no banding across a near-flat gradient. */
 .map-area-3d {
-  background: radial-gradient(120% 90% at 50% 32%, #f4f1ec 0%, #ebe5dd 48%, #dbd4ca 100%);
+  background: var(--map-ground);
 }
 
 .map-3d {
@@ -832,10 +835,137 @@ button { font-family: inherit; }
   height: 100%;
 }
 
-/* ---------------- the pan hint (bottom right of the map) ----------------- */
-/* Drag already tilts the view — that's OrbitControls' own rotate gesture, and
-   it needs no explanation. Panning is the gesture that isn't the obvious
-   one-finger drag, so this says what does it and nothing else. */
+/* ---------------- place names on the map -------------------------------- */
+/* HTML over the canvas, positioned by three/labels.ts. Same size at every
+   zoom, halo'd so they read over walls, and never in the way of a drag: taps
+   are hit-tested by the viewer, so the layer itself takes no pointer events. */
+
+.map-labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.map-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 500;
+  color: #6b665f;
+  text-shadow:
+    0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff;
+  will-change: transform;
+}
+
+.map-label-landmark {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #2f5d3a;
+}
+
+.map-label-entrance { font-size: 11.5px; font-weight: 600; color: var(--maroon); }
+
+.map-label-icon {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  border-radius: 9px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: none;
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+.map-label-entrance .map-label-icon { background: var(--maroon); }
+.map-label-restroom .map-label-icon { background: #3b6fb6; }
+.map-label-stairs .map-label-icon { background: #7a6a55; font-size: 11px; }
+.map-label-restroom .map-label-text,
+.map-label-stairs .map-label-text { display: none; }
+
+/* ---------------- zoom / compass / tilt (right edge of the map) ---------- */
+
+.map-controls {
+  position: absolute;
+  right: 14px;
+  top: 140px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.map-ctl {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 3px 14px rgba(28, 21, 18, 0.14);
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+
+.map-ctl:hover { background: #fff; }
+
+.map-ctl-tilt { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.map-ctl-tilt.on { color: var(--maroon); }
+
+.map-ctl-zoom {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  box-shadow: 0 3px 14px rgba(28, 21, 18, 0.14);
+}
+
+.map-ctl-zoom .map-ctl { box-shadow: none; }
+.map-ctl-zoom .map-ctl:first-child { border-radius: 10px 10px 0 0; border-bottom: none; }
+.map-ctl-zoom .map-ctl:last-child { border-radius: 0 0 10px 10px; }
+
+.compass {
+  position: relative;
+  width: 8px;
+  height: 24px;
+  transition: transform 80ms linear;
+}
+
+.compass-n,
+.compass-s {
+  position: absolute;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+
+.compass-n { top: 0; border-bottom: 12px solid var(--maroon); }
+.compass-s { bottom: 0; border-top: 12px solid #b9b3aa; }
+
+@media (max-width: 760px) {
+  .map-controls { right: 10px; top: 128px; }
+  .map-ctl { width: 40px; height: 40px; }
+}
+
+/* ---------------- the gesture hint (bottom right of the map) ------------- */
+/* Dragging moves the map, as on any map, and needs no explanation. Tilting
+   and turning are the gestures nobody guesses, so this says what does them. */
 
 .pan-hint {
   position: absolute;
@@ -910,6 +1040,27 @@ button { font-family: inherit; }
 }
 
 .floor-chip.active .route-dot { background: #fff; }
+
+/* "Upper Level", for a moment, when the floor picks itself. */
+.floor-note {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: floor-note-in 160ms ease-out;
+}
+
+@keyframes floor-note-in {
+  from { opacity: 0; transform: translate(6px, -50%); }
+}
 
 /* ---------------- editor key (the pencil, top left of the map) ----------- */
 

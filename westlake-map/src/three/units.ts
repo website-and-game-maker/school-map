@@ -98,20 +98,46 @@ export function dimensionForElevation(elevDeg: number): number {
   return clamp01((90 - elevDeg) / 65);
 }
 
-/** The elevation the camera opens at, before anyone has dragged it. */
-export const DEFAULT_ELEVATION_DEG = elevationForDimension(0.55);
+/**
+ * The map opens straight down. Not exactly 90: at exactly 90 the camera's
+ * heading is undefined and the first rotate gesture jumps.
+ */
+export const MAP_ELEVATION_DEG = 89.9;
+
+/**
+ * How far the map leans back, at most, in degrees from straight down. Enough
+ * to see walls and the storeys above and below; not so much that it turns
+ * back into a model on a table, which is what a free orbit invited.
+ */
+export const MAX_TILT_DEG = 50;
+
+/** Where the tilt button leans to. */
+export const TILTED_ELEVATION_DEG = 45;
+
+/**
+ * How tall the walls are drawn, as a fraction of their real height, at a
+ * given camera elevation. Zero looking straight down, where the floor texture
+ * already draws every wall as a clean outline and extruded boxes would only
+ * add stair-stepped edges; rising to about a third of real height at full
+ * tilt, enough to read as walls without turning corridors into canyons.
+ */
+export function wallRiseForElevation(elevDeg: number): number {
+  const t = clamp01((86 - elevDeg) / 30);
+  return 0.35 * (t * t * (3 - 2 * t));
+}
 
 /**
  * How much the unfocused storeys fade.
  *
  * Looking straight down, three storeys 110 ft apart project onto exactly the
  * same place, so a visible neighbour turns the floor you are reading to mush.
- * They have to disappear at the plan end. Tilt away and they separate, and then
- * they are the entire point of the view, so they come back.
+ * They have to disappear at the plan end. Tilt away and they separate, and the
+ * ones below come back — faintly, as footprints, because the map is still a
+ * map of one floor.
  */
 export function ghostOpacityForDimension(dim: number): number {
   const t = clamp01((clamp01(dim) - 0.12) / 0.3);
-  return 0.72 * (t * t * (3 - 2 * t));
+  return 0.3 * (t * t * (3 - 2 * t));
 }
 
 /** World Y of a storey's slab top. */

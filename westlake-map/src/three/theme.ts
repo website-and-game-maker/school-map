@@ -12,14 +12,14 @@
 import * as THREE from "three";
 
 export const PALETTE = {
-  ground: 0xd4ccc1,
+  ground: 0xeceae6, // --map-ground in App.css, and INK.paper in floorPlan.ts
 
   slabTop: 0xffffff, // multiplier over the scan texture
   slabTopMuted: 0xcbc4ba, // a storey below the focused one
   slabEdge: 0xcfc6ba,
 
-  wallSide: 0xe0d8cd,
-  wallCap: 0xfaf7f2,
+  wallSide: 0xe6e1d9,
+  wallCap: 0xaaa398, // the plate's wall colour, so a wall seen end-on is the same line
   wallEdgeLine: 0x9a8f80,
 
   curb: 0xb9b0a4, // below-focus storeys, unlit on purpose
@@ -59,9 +59,6 @@ export const CAMERA = {
   far: 6000,
   overviewDistance: 1450,
   overviewElevationDeg: 48,
-  overviewAzimuthDeg: 202,
-  minPolarAngle: 0.12,
-  maxPolarAngle: 1.4,
   minDistance: 60,
   maxDistance: 2600,
 } as const;
@@ -99,7 +96,7 @@ export function clamp(v: number, lo: number, hi: number): number {
  * viewer's job — it walks this record, so nothing can be missed.
  */
 export interface Materials {
-  slab: THREE.MeshLambertMaterial;
+  slab: THREE.MeshBasicMaterial;
   slabSkirt: THREE.MeshLambertMaterial;
   wallCap: THREE.MeshStandardMaterial;
   wallSide: THREE.MeshStandardMaterial;
@@ -119,14 +116,11 @@ export interface Materials {
 }
 
 export function createMaterials(): Materials {
-  // Lambert for paper: it has no specular lobe, it is cheaper across three
-  // texture-heavy plates, and — the real reason — it ignores scene.environment,
-  // so the scan renders at a brightness we can calibrate independently of the
-  // walls.
-  // DoubleSide because the exploded stack is looked at from below as well as
-  // above, and because the footprint rings' winding is whatever the tracer
+  // Unlit: the plate is a drawn map and its colours are the ones in
+  // floorPlan.ts, exactly — lighting would only tint them.
+  // DoubleSide because the footprint rings' winding is whatever the tracer
   // emitted — culling on it would silently drop whole wings.
-  const slab = new THREE.MeshLambertMaterial({
+  const slab = new THREE.MeshBasicMaterial({
     color: PALETTE.slabTop,
     side: THREE.DoubleSide,
   });

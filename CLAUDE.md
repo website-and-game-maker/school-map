@@ -49,13 +49,14 @@ invalidates `PX_PER_FOOT`, `align3d.json` and every traced point at once.
   day's walks between them, timed by the same `route()` and `buildDirections()`
   as an ordinary search (walks over `PASSING_PERIOD_MINUTES` are flagged).
   Clicking a walk in `components/SchedulePanel.tsx` just sets From and To.
-- `src/three/` — the 3D view. `units.ts` and `placement.ts` are the coordinate
-  foundation — `units.ts` also owns storey spacing and the ghost-opacity curve
-  that fades unfocused floors as the camera tilts; `walls.ts` greedy-meshes
-  the wall geometry; `stairColumns.ts` ties the storeys together visibly;
-  `viewer.ts` owns the scene and every three.js object, including the camera
-  tilt itself, which is read straight off the OrbitControls drag rather than
-  driven by a separate control.
+- `src/three/` — the map view (three.js, drawn to read as a map). `units.ts`
+  and `placement.ts` are the coordinate foundation — `units.ts` also owns
+  storey spacing, the tilt limits, the ghost-opacity curve and how far walls
+  rise as the map tilts; `walls.ts` greedy-meshes the wall geometry;
+  `labels.ts` draws place names as screen-space HTML; `autoFloor.ts` decides
+  which floor the map is looking at; `stairColumns.ts` ties the storeys
+  together visibly; `viewer.ts` owns the scene, every three.js object and the
+  MapControls.
 - `src/data/floors/` — traced room positions, the nav grids, the wall geometry,
   and the per-storey 3D placement.
 - `tools/` — the Python that turns the scanned plans into all of the above.
@@ -90,17 +91,22 @@ it before changing the extraction.
   the app's Edit mode, one marker per stairwell per floor — placing a second one
   nearby moves the first rather than adding a rival, so "which stairwell is this"
   always has one answer. Cross-floor routes are approximate until they are.
-- **Tilt is a drag gesture, not a control.** There used to be a slider next to
-  it doing the same thing the OrbitControls rotate drag already did, which is
-  two controls for one motion. The slider is gone; dragging the camera *is*
-  the tilt, read back each frame as the camera's own elevation
-  (`currentElevationDeg` in `viewer.ts`) to drive the ghost fade that used to
-  answer to the slider's number instead. The storey stack is ALWAYS open at
-  110 ft regardless of tilt. It used to open and close the stack as well, and
-  the flat end swapped to the 2D renderer — so pushing the old slider down
-  jumped to a differently-scaled view of a different thing. Do not make tilt
-  change the model again, and do not reintroduce a 2D/3D toggle. Editing is
-  the one thing that uses the 2D renderer, because the edit overlay is SVG.
+- **It is a map first.** The owner's verdict on the free-orbit 3D view was
+  that it felt like "a silly 3D model and not at all like a map". So the view
+  opens straight down, north up, unlit, with no sky, ground or shadows, and
+  place names are screen-space labels that keep their size and drop out
+  rather than collide (`labels.ts`). Controls are MapControls: drag pans,
+  wheel/pinch zooms toward the pointer, right-drag / ctrl-drag / two-finger
+  twist rotates and tilts. Tilt is capped at `MAX_TILT_DEG` (50°); the 3D
+  button animates between flat and 45°, and the compass appears once the map
+  is turned. Flat, walls are not extruded at all (the plate draws them as
+  smooth outlines; extruded boxes from above are stair-stepped); they rise to
+  about a third of real height as the map tilts. Only storeys *below* the
+  active one ghost in when tilted, faintly; the ones above stay hidden. The
+  storey stack is still always 110 ft apart — the camera, not the model, is
+  what changes, and it is still one renderer: the 3D button moves the camera
+  of the same scene, it does not swap to the 2D renderer. Editing is the one
+  thing that uses the 2D renderer, because the edit overlay is SVG.
 
 - **A wall is ink with a different space on each side of it.** Not "a long
   straight run of ink" — that was the old definition and it drew every door
@@ -116,9 +122,16 @@ it before changing the extraction.
   pixelated; `straighten()` is the pass that removes scanner bumps and snaps
   near-axis edges to exact.
 
-- **The floor selector is automatic** — it follows the route and the storey the
-  camera is on. The chips on the map are a readout you can override, not the
-  main way in.
+- **The floor selector is automatic** — it follows the route, and when a pan
+  or zoom settles, `autoFloor.ts` counts the places (rooms, named spaces,
+  entrances, marked stairs/restrooms) each floor has under the middle of the
+  view; another floor takes over only with at least 2x as many. The storeys
+  overlap a lot, so in the middle of the school it stays put on purpose;
+  the 100s under the south-east and the upper west wing are where it
+  switches. Picking a floor by hand pins it until the map moves ~160 ft
+  away. Zoomed out to the whole school it never switches. The chips are a
+  readout you can override, not the main way in; a pill says which floor it
+  switched to.
 
 - **The hand-drawn tour map** (`src/assets/tour-map*.jpg`, shown in the app) is a
   student's sketch, not a survey. It is a reference layer, never a data source
@@ -147,10 +160,11 @@ Nearest in line, in order:
    or ambiguous on the scan. The templates know digits only; teaching them the
    suffix letters is the next step, and would need confident suffixed reads to
    learn from (there are four).
-4. **Fly-the-route camera and 3D labels** — both designed in detail, neither
-   built. The camera is specified as a low drone at ~22 ft, not a first-person
-   walk: at eye height you see nothing but wall and lose the room numbers on the
-   floor, which are the whole advantage.
+4. **Fly-the-route camera** — designed in detail, not built. Place labels
+   now exist (`src/three/labels.ts`); build any route labels on them. The
+   camera is specified as a low drone at ~22 ft, not a first-person walk: at
+   eye height you see nothing but wall and lose the room numbers on the floor,
+   which are the whole advantage.
 
 Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
 
