@@ -3,12 +3,13 @@
 // Deliberately thin. React owns no three.js object and holds no scene state:
 // it creates the viewer once, pushes props at it, and disposes it. Everything
 // visual is decided inside MapViewer3D. The one thing React draws here is the
-// map's own buttons (zoom, compass, tilt), because they talk to the viewer
-// directly and nothing else in the app needs to know about them.
+// map's own buttons (zoom, compass, tilt, fly the route), because they talk to
+// the viewer directly and nothing else in the app needs to know about them.
 
 import { useEffect, useRef, useState } from "react";
 import {
   MapViewer3D,
+  type FlightState,
   type MapViewState,
   type Viewer3DCallbacks,
   type Viewer3DProps,
@@ -22,6 +23,7 @@ export default function MapCanvas3D(props: Props) {
   const propsRef = useRef(props);
   propsRef.current = props;
   const [view, setView] = useState<MapViewState>({ tilted: false, headingDeg: 0 });
+  const [flight, setFlight] = useState<FlightState>("idle");
 
   // Created once. In StrictMode dev this runs twice, which is exactly why
   // dispose() has to be complete — browsers cap live WebGL contexts at ~16.
@@ -37,6 +39,10 @@ export default function MapCanvas3D(props: Props) {
         propsRef.current.onViewChange?.(s);
       },
       onFatal: (r) => propsRef.current.onFatal?.(r),
+      onFlightChange: (s) => {
+        setFlight(s);
+        propsRef.current.onFlightChange?.(s);
+      },
     });
     viewerRef.current = viewer;
     return () => {
@@ -53,6 +59,8 @@ export default function MapCanvas3D(props: Props) {
   });
 
   const turned = view.headingDeg > 1 && view.headingDeg < 359;
+  const hasRoute = props.route !== null && props.route.legs.length > 0;
+  const v = () => viewerRef.current;
 
   return (
     <>
@@ -88,6 +96,34 @@ export default function MapCanvas3D(props: Props) {
           </button>
         </div>
       </div>
+      {hasRoute && (
+        // Kept above the phone's bottom sheet, which covers `obscuredBottom` px
+        // of the map; otherwise the Stop button can end up under the sheet.
+        <div
+          className="fly-controls"
+          role="group"
+          aria-label="Fly the route"
+          style={{ bottom: `${Math.round(props.obscuredBottom) + 16}px` }}
+        >
+          {flight === "idle" ? (
+            <button className="fly-btn primary" onClick={() => v()?.startFlight()}>
+              <span aria-hidden="true">▶</span> Fly the route
+            </button>
+          ) : (
+            <>
+              <button
+                className="fly-btn primary"
+                onClick={() => (flight === "flying" ? v()?.pauseFlight() : v()?.resumeFlight())}
+              >
+                {flight === "flying" ? "Pause" : "Resume"}
+              </button>
+              <button className="fly-btn" onClick={() => v()?.stopFlight()}>
+                Stop
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }

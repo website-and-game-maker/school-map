@@ -63,6 +63,48 @@ export const CAMERA = {
   maxDistance: 2600,
 } as const;
 
+/**
+ * Fly-the-route camera. Feet, seconds, degrees, and feet per second.
+ *
+ * Heading-up and leaned back, the way a phone map looks while you navigate —
+ * not a low drone. The map tilts no further than `MAX_TILT_DEG` (units.ts),
+ * and the flight stays inside that on purpose: a pose the controls would not
+ * allow makes the camera jump the moment anyone touches the map. Walls only
+ * rise to a third of real height here, so there is nothing to duck under, and
+ * from this height the place names keep reading as they go by.
+ */
+export const FLY = {
+  /** Camera elevation above the horizon. MAX_TILT_DEG is 50 off vertical, so
+   *  40 is the floor; 42 keeps a little margin. */
+  elevationDeg: 42,
+  /** Camera distance from the point it looks at. */
+  distanceFt: 190,
+  /** The camera looks this far ahead of where it is along the route, so more
+   *  of what is coming is on screen than what is behind. */
+  lookAheadFt: 40,
+  /** How far ahead along the path the heading aims. Longer than a fillet, so
+   *  the camera starts turning before the corner rather than at it. */
+  headingLookFt: 45,
+  /** ≈ 2 s per 100 ft: twelve times walking pace (directions.ts walks at
+   *  4 ft/s), slow enough to read a room name going past, quick enough that
+   *  a 600 ft route is a 12-second watch rather than a chore. */
+  speedFtPerS: 48,
+  /** Up and down stairs it slows to this share of full speed, so a floor
+   *  change is seen happening rather than skipped. */
+  riserSpeedFactor: 0.55,
+  /** Time constants for the damped heading and position, seconds. */
+  headingTauS: 0.6,
+  positionTauS: 0.25,
+  /** Accelerate off the start and settle onto the destination. */
+  rampS: 1.1,
+  /** The glide from wherever the map was into the first pose. */
+  introS: 1.4,
+  /** The glide back out to the whole route at the end. */
+  outroMs: 1100,
+  /** Reduced motion: how long each direction step is held before cutting. */
+  reducedHoldS: 2.6,
+} as const;
+
 export function prefersReducedMotion(): boolean {
   return (
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches

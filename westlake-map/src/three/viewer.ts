@@ -48,8 +48,10 @@ import { buildSlabGeometry } from "./slab";
 import { TextureCache } from "./textures";
 import { liftRoute, type Route3D } from "./routeLift";
 import { buildRouteObject, type RouteObject } from "./routeObject";
+import { RouteFlight, type OrbitPose } from "./flight";
 import {
   CAMERA,
+  FLY,
   PALETTE,
   clamp,
   createMaterials,
@@ -108,7 +110,11 @@ export interface Viewer3DCallbacks {
   onPickPlace?: (item: MapLabelItem) => void;
   onViewChange?: (state: MapViewState) => void;
   onFatal?: (reason: string) => void;
+  /** Fly-the-route state, for the bridge's Fly / Pause / Stop buttons. */
+  onFlightChange?: (state: FlightState) => void;
 }
+
+export type FlightState = "idle" | "flying" | "paused";
 
 /** A camera move the app makes itself, eased rather than cut. */
 interface CameraTween {
@@ -193,6 +199,12 @@ export class MapViewer3D {
   /** Suppresses auto-focus while the camera is being moved by the app itself. */
   private cameraDriven = false;
 
+  private flight: RouteFlight | null = null;
+  private flightState: FlightState = "idle";
+  /** How the map was tilted and turned before the flight, to frame the whole
+   *  route that way again at the end rather than heading-up and leaned. */
+  private beforeFlight: { el: number; az: number } | null = null;
+
   private onVisibility = () => {
     this.hidden = document.visibilityState === "hidden";
     this.invalidate();
@@ -222,6 +234,9 @@ export class MapViewer3D {
   };
   private onGestureStart = () => {
     this.tween = null; // a finger on the map always beats an animation
+    // A flight too: the camera stays exactly where it was grabbed. The flight
+    // keeps inside the controls' own limits, so handing it over never jumps.
+    if (this.flight) this.endFlight(false);
     this.userMoved = true;
     this.gestureEnded = false;
   };
@@ -815,6 +830,9 @@ export class MapViewer3D {
     const spreadChanged = Math.abs(this.builtRouteSpread - this.spread) > 0.5;
     if (route && routeKey === this.builtRouteKey && !spreadChanged) return;
 
+    // The flight holds the old spine; following it now would fly a route that
+    // is no longer drawn. Whatever replaced it reframes the camera itself.
+    if (this.flight) this.endFlight(false);
     if (this.routeObject) {
       this.scene.remove(this.routeObject.group);
       this.routeObject.dispose();
@@ -839,7 +857,11 @@ export class MapViewer3D {
   }
 
   /** Frame the whole route, or the building when there isn't one. */
-  frameRoute(): void {
+  frameRoute(
+    el = this.currentElevationDeg(),
+    az = this.currentAzimuthDeg(),
+    ms = 650
+  ): void {
     if (!this.route3d) {
       this.resetView();
       return;
@@ -860,7 +882,7 @@ export class MapViewer3D {
     const fitH = (size.z * 0.5 + 90) / halfFov / this.visibleFraction();
     const fitW = (size.x * 0.5 + 90) / halfFov / (w / h);
     const dist = clamp(Math.max(fitH, fitW), CAMERA.minDistance * 3, CAMERA.maxDistance);
-    this.animateTo(centre, dist, this.currentElevationDeg(), this.currentAzimuthDeg(), 650);
+    this.animateTo(centre, dist, el, az, ms);
   }
 
   /** The centre of the built model, not the page origin — the building only
@@ -954,6 +976,88 @@ export class MapViewer3D {
     this.invalidate();
   }
 
+  // ---------------------------------------------------------------- flight
+
+  /**
+   * Fly the current route: heading-up and leaned back, the camera follows the
+   * walk from start to end, climbing or dropping with it on the stairs while
+   * the floor switches under it (see `FLY` in theme.ts and flight.ts). Any
+   * touch on the map takes the camera back; Stop, or arriving, glides out to
+   * the whole route.
+   *
+   * With reduced motion it does not glide: it cuts from one direction step to
+   * the next, holding each, and cuts back to the overview at the end.
+   */
+  startFlight(): void {
+    if (this.disposed || !this.route3d || this.route3d.totalFt <= 0) return;
+    this.tween = null;
+    window.clearTimeout(this.floorCheckTimer);
+    this.userMoved = false; // the floor follows the flight, not the view
+    if (!this.flight) {
+      this.beforeFlight = { el: this.currentElevationDeg(), az: this.currentAzimuthDeg() };
+    }
+    this.flight = new RouteFlight(this.route3d, this.currentPose(), this.reducedMotion);
+    this.setFlightState("flying");
+    this.invalidate();
+  }
+
+  pauseFlight(): void {
+    if (this.flight && this.flightState === "flying") this.setFlightState("paused");
+  }
+
+  resumeFlight(): void {
+    if (this.flight && this.flightState === "paused") this.setFlightState("flying");
+  }
+
+  /** Stop and show the whole route again — the Stop button, as opposed to a
+   *  drag, which leaves the camera where it is. */
+  stopFlight(): void {
+    if (this.flight) this.endFlight(true);
+  }
+
+  private endFlight(reframe: boolean): void {
+    this.flight = null;
+    this.setFlightState("idle");
+    const before = this.beforeFlight;
+    this.beforeFlight = null;
+    if (reframe && before) this.frameRoute(before.el, before.az, FLY.outroMs);
+  }
+
+  private setFlightState(state: FlightState): void {
+    if (state === this.flightState) return;
+    this.flightState = state;
+    this.cb.onFlightChange?.(state);
+  }
+
+  private currentPose(): OrbitPose {
+    return {
+      target: this.controls.target.clone(),
+      dist: this.cameraDistance(),
+      el: this.currentElevationDeg(),
+      az: this.currentAzimuthDeg(),
+    };
+  }
+
+  private stepFlight(dt: number): void {
+    const flight = this.flight;
+    if (!flight) return;
+    const pose = flight.step(dt);
+    this.cameraDriven = true;
+    this.placeCamera(pose.target, pose.dist, pose.el, pose.az);
+    this.cameraDriven = false;
+
+    // The floor being read is the one the route is on, switching halfway up
+    // (or down) the stairs: by then the ribbon is closer to the next storey
+    // than the last, and the next one's names are the ones coming up.
+    const idx = Math.round(flight.floorIndex());
+    const floor = FLOOR_ORDER.find((f) => FLOOR_INDEX[f] === idx);
+    if (floor && floor !== this.props.activeFloor && floor !== this.requestedFloor) {
+      this.requestedFloor = floor; // asked for by the viewer, so not a pin
+      this.cb.onFocusFloor?.(floor);
+    }
+    if (flight.done) this.endFlight(true);
+  }
+
   // ------------------------------------------------------------- lifecycle
 
   update(next: Viewer3DProps): void {
@@ -976,7 +1080,8 @@ export class MapViewer3D {
       this.requestedFloor = null;
       this.labels.setFloor(next.activeFloor);
       this.applyFloorStates();
-      this.lookAtFloor(next.activeFloor);
+      // In flight the floor follows the camera, not the other way round.
+      if (!this.flight) this.lookAtFloor(next.activeFloor);
       for (const f of FLOOR_ORDER) void this.loadFloorTexture(f);
       this.invalidate();
     }
@@ -1019,6 +1124,7 @@ export class MapViewer3D {
     const animating = this.routeObject !== null && !this.reducedMotion;
     if (animating) this.routeObject?.update(dt);
     if (this.tween) this.stepTween(dt || 1 / 60);
+    if (this.flight && this.flightState === "flying") this.stepFlight(dt || 1 / 60);
 
     // controls.update() returns true while damping is still settling. The
     // previous guard tested `enableDamping`, which is a constant true, so the
@@ -1053,6 +1159,7 @@ export class MapViewer3D {
     this.renderer.domElement.removeEventListener("pointerup", this.onPointerUp);
     this.controls.dispose();
     this.labels.dispose();
+    this.flight = null;
 
     if (this.routeObject) {
       this.scene.remove(this.routeObject.group);

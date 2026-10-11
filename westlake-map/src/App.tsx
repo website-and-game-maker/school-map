@@ -921,7 +921,6 @@ export default function App() {
 
           <p className="roadmap-title">Coming later</p>
           <ul className="chip-list">
-            <li>Fly the route</li>
             <li>Teacher search</li>
             <li>Photo walkthroughs</li>
           </ul>
@@ -1001,6 +1000,10 @@ export default function App() {
             // becomes the one you are reading.
             onFocusFloor={autoSwitchFloor}
             onPickPlace={pickPlace}
+            // On a phone the sheet covers half the map; a flight wants all of it.
+            onFlightChange={(state) => {
+              if (state === "flying") setSheetOpen(false);
+            }}
           />
           </Suspense>
         )}

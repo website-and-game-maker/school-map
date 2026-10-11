@@ -963,6 +963,39 @@ button { font-family: inherit; }
   .map-ctl { width: 40px; height: 40px; }
 }
 
+/* ---------------- fly the route (bottom left of the map) ----------------- */
+/* `bottom` is set inline from the phone sheet's height, so it clears it. */
+
+.fly-controls {
+  position: absolute;
+  left: 16px;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+}
+
+.fly-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 3px 14px rgba(28, 21, 18, 0.14);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fly-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fly-btn:hover { filter: brightness(0.96); }
+
+@media (max-width: 760px) {
+  .fly-controls { left: 12px; }
+  .fly-btn { height: 40px; }
+}
+
 /* ---------------- the gesture hint (bottom right of the map) ------------- */
 /* Dragging moves the map, as on any map, and needs no explanation. Tilting
    and turning are the gestures nobody guesses, so this says what does them. */

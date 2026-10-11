@@ -160,11 +160,14 @@ Nearest in line, in order:
    or ambiguous on the scan. The templates know digits only; teaching them the
    suffix letters is the next step, and would need confident suffixed reads to
    learn from (there are four).
-4. **Fly-the-route camera** — designed in detail, not built. Place labels
-   now exist (`src/three/labels.ts`); build any route labels on them. The
-   camera is specified as a low drone at ~22 ft, not a first-person walk: at
-   eye height you see nothing but wall and lose the room numbers on the floor,
-   which are the whole advantage.
+4. **Fly-the-route camera — built.** "Fly the route" (bottom left of the map
+   whenever a route is shown) follows the walk heading-up and leaned back to
+   42°, inside the map's own tilt limit so a touch hands the camera back
+   without a jump; the floor switches halfway up or down each stair. The
+   pose maths is `src/three/flight.ts`, the numbers are `FLY` in `theme.ts`,
+   and the viewer drives it. It replaced the earlier design of a low drone
+   at ~22 ft, which only made sense before the map view capped the tilt.
+   Reduced motion cuts between direction steps instead of gliding.
 
 Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
 
