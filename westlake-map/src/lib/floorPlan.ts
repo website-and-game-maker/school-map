@@ -72,15 +72,21 @@ export function roomsOf(floor: FloorId): RoomsFile {
   return ROOMS[floor];
 }
 
-/** The palette, kept in step with App.css so the map and the panel agree. */
-const INK = {
-  paper: "#f4f1ec",
+/**
+ * The palette. A street map's, not an architect's: pale rooms on white
+ * circulation, walls a quiet warm grey rather than black ink, and the named
+ * spaces (gyms, the library, the fields) tinted so they read as places before
+ * any label does. `paper` matches --map-ground in App.css, which is also the
+ * 3D view's clear colour, so the building sits on the same ground in both.
+ */
+export const INK = {
+  paper: "#eceae6",
   corridor: "#ffffff",
-  room: "#eef1f5",
-  landmark: "#e4efe9",
-  outline: "#cfc8bd",
-  wall: "#8c857a",
-  label: "#3a3733",
+  room: "#f6f3ee",
+  landmark: "#e2efe3",
+  outline: "#dcd5ca",
+  wall: "#aaa398",
+  label: "#4d4a46",
 } as const;
 
 export interface FloorPlanOptions {

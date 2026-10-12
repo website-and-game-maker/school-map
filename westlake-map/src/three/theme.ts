@@ -12,14 +12,14 @@
 import * as THREE from "three";
 
 export const PALETTE = {
-  ground: 0xd4ccc1,
+  ground: 0xeceae6, // --map-ground in App.css, and INK.paper in floorPlan.ts
 
   slabTop: 0xffffff, // multiplier over the scan texture
   slabTopMuted: 0xcbc4ba, // a storey below the focused one
   slabEdge: 0xcfc6ba,
 
-  wallSide: 0xe0d8cd,
-  wallCap: 0xfaf7f2,
+  wallSide: 0xe6e1d9,
+  wallCap: 0xaaa398, // the plate's wall colour, so a wall seen end-on is the same line
   wallEdgeLine: 0x9a8f80,
 
   curb: 0xb9b0a4, // below-focus storeys, unlit on purpose
@@ -59,11 +59,50 @@ export const CAMERA = {
   far: 6000,
   overviewDistance: 1450,
   overviewElevationDeg: 48,
-  overviewAzimuthDeg: 202,
-  minPolarAngle: 0.12,
-  maxPolarAngle: 1.4,
   minDistance: 60,
   maxDistance: 2600,
+} as const;
+
+/**
+ * Fly-the-route camera. Feet, seconds, degrees, and feet per second.
+ *
+ * Heading-up and leaned back, the way a phone map looks while you navigate —
+ * not a low drone. The map tilts no further than `MAX_TILT_DEG` (units.ts),
+ * and the flight stays inside that on purpose: a pose the controls would not
+ * allow makes the camera jump the moment anyone touches the map. Walls only
+ * rise to a third of real height here, so there is nothing to duck under, and
+ * from this height the place names keep reading as they go by.
+ */
+export const FLY = {
+  /** Camera elevation above the horizon. MAX_TILT_DEG is 50 off vertical, so
+   *  40 is the floor; 42 keeps a little margin. */
+  elevationDeg: 42,
+  /** Camera distance from the point it looks at. */
+  distanceFt: 190,
+  /** The camera looks this far ahead of where it is along the route, so more
+   *  of what is coming is on screen than what is behind. */
+  lookAheadFt: 40,
+  /** How far ahead along the path the heading aims. Longer than a fillet, so
+   *  the camera starts turning before the corner rather than at it. */
+  headingLookFt: 45,
+  /** ≈ 2 s per 100 ft: twelve times walking pace (directions.ts walks at
+   *  4 ft/s), slow enough to read a room name going past, quick enough that
+   *  a 600 ft route is a 12-second watch rather than a chore. */
+  speedFtPerS: 48,
+  /** Up and down stairs it slows to this share of full speed, so a floor
+   *  change is seen happening rather than skipped. */
+  riserSpeedFactor: 0.55,
+  /** Time constants for the damped heading and position, seconds. */
+  headingTauS: 0.6,
+  positionTauS: 0.25,
+  /** Accelerate off the start and settle onto the destination. */
+  rampS: 1.1,
+  /** The glide from wherever the map was into the first pose. */
+  introS: 1.4,
+  /** The glide back out to the whole route at the end. */
+  outroMs: 1100,
+  /** Reduced motion: how long each direction step is held before cutting. */
+  reducedHoldS: 2.6,
 } as const;
 
 export function prefersReducedMotion(): boolean {
@@ -99,7 +138,7 @@ export function clamp(v: number, lo: number, hi: number): number {
  * viewer's job — it walks this record, so nothing can be missed.
  */
 export interface Materials {
-  slab: THREE.MeshLambertMaterial;
+  slab: THREE.MeshBasicMaterial;
   slabSkirt: THREE.MeshLambertMaterial;
   wallCap: THREE.MeshStandardMaterial;
   wallSide: THREE.MeshStandardMaterial;
@@ -119,14 +158,11 @@ export interface Materials {
 }
 
 export function createMaterials(): Materials {
-  // Lambert for paper: it has no specular lobe, it is cheaper across three
-  // texture-heavy plates, and — the real reason — it ignores scene.environment,
-  // so the scan renders at a brightness we can calibrate independently of the
-  // walls.
-  // DoubleSide because the exploded stack is looked at from below as well as
-  // above, and because the footprint rings' winding is whatever the tracer
+  // Unlit: the plate is a drawn map and its colours are the ones in
+  // floorPlan.ts, exactly — lighting would only tint them.
+  // DoubleSide because the footprint rings' winding is whatever the tracer
   // emitted — culling on it would silently drop whole wings.
-  const slab = new THREE.MeshLambertMaterial({
+  const slab = new THREE.MeshBasicMaterial({
     color: PALETTE.slabTop,
     side: THREE.DoubleSide,
   });

@@ -1,4 +1,13 @@
-// The 3D view: scene, lighting, the three storeys, and the render loop.
+// The map: scene, the three storeys, labels, and the render loop.
+//
+// It is a 3D scene drawn to read as a map. It opens looking straight down,
+// north up, with flat colour and screen-space labels; dragging pans, the wheel
+// or a pinch zooms toward where you point, and tilting (right-drag, ctrl-drag
+// or a two-finger twist, or the tilt button) leans it back to at most
+// MAX_TILT_DEG, where the walls rise and the other storeys appear as ghosts.
+// Flat, the walls are not extruded at all: the floor texture already draws
+// them as smooth outlines, and extruded boxes seen from above are what made
+// the old view read as a model.
 //
 // This class owns every three.js object. React never touches one — the bridge
 // component creates a viewer, pushes props at it, and disposes it. That split
@@ -11,7 +20,7 @@
 // view open through a passing period.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { MapControls } from "three/addons/controls/MapControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 import type { FloorData, FloorId, StairLink } from "../types";
@@ -20,14 +29,18 @@ import type { Directions } from "../lib/directions";
 import { FLOOR_ORDER } from "../data/floors";
 
 import {
-  DEFAULT_ELEVATION_DEG,
   FLOOR_INDEX,
+  MAP_ELEVATION_DEG,
+  MAX_TILT_DEG,
   SPREAD,
+  TILTED_ELEVATION_DEG,
   dimensionForElevation,
   ghostOpacityForDimension,
   storeyY,
+  wallRiseForElevation,
 } from "./units";
-import { buildApron, buildSite, type Site } from "./site";
+import { MapLabels, buildLabelItems, type MapLabelItem } from "./labels";
+import { pickFloor, type FloorAnchors } from "./autoFloor";
 import { buildStairColumns, type StairColumns } from "./stairColumns";
 import { type PlacementSet } from "./placement";
 import { buildWallGeometry, buildWallTopEdges } from "./walls";
@@ -35,11 +48,15 @@ import { buildSlabGeometry } from "./slab";
 import { TextureCache } from "./textures";
 import { liftRoute, type Route3D } from "./routeLift";
 import { buildRouteObject, type RouteObject } from "./routeObject";
+import { RouteFlight, type OrbitPose } from "./flight";
 import {
   CAMERA,
+  FLY,
+  PALETTE,
   clamp,
   createMaterials,
   disposeMaterials,
+  easeInOutCubic,
   isCoarsePointer,
   prefersReducedMotion,
   type Materials,
@@ -75,11 +92,36 @@ export interface Viewer3DProps {
   obscuredBottom: number;
 }
 
+export interface MapViewState {
+  /** Leaning back from straight-down by more than a few degrees. */
+  tilted: boolean;
+  /** Compass heading of the top of the screen, degrees clockwise from north. */
+  headingDeg: number;
+}
+
 export interface Viewer3DCallbacks {
   onPickFloor?: (f: FloorId) => void;
-  /** Fired when the camera settles on a storey the app is not showing yet. */
+  /**
+   * The map settled on part of the school where another floor has clearly
+   * more to show than the current one. See autoFloor.ts.
+   */
   onFocusFloor?: (f: FloorId) => void;
+  /** A place name on the map was tapped. */
+  onPickPlace?: (item: MapLabelItem) => void;
+  onViewChange?: (state: MapViewState) => void;
   onFatal?: (reason: string) => void;
+  /** Fly-the-route state, for the bridge's Fly / Pause / Stop buttons. */
+  onFlightChange?: (state: FlightState) => void;
+}
+
+export type FlightState = "idle" | "flying" | "paused";
+
+/** A camera move the app makes itself, eased rather than cut. */
+interface CameraTween {
+  from: { target: THREE.Vector3; dist: number; el: number; az: number };
+  to: { target: THREE.Vector3; dist: number; el: number; az: number };
+  t: number;
+  duration: number;
 }
 
 interface FloorParts {
@@ -90,7 +132,7 @@ interface FloorParts {
   skirt: THREE.Mesh;
   ghostPlate: THREE.Mesh;
   ghostOutline: THREE.LineSegments;
-  slabMaterial: THREE.MeshLambertMaterial;
+  slabMaterial: THREE.MeshBasicMaterial;
   /** Cloned per floor: the unfocused storeys need their own opacity. */
   wallMaterials: THREE.MeshStandardMaterial[];
   owned: Array<{ dispose(): void }>;
@@ -109,7 +151,7 @@ export class MapViewer3D {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
-  private controls: OrbitControls;
+  private controls: MapControls;
   private materials: Materials;
   private textures: TextureCache;
   private placements: PlacementSet;
@@ -133,13 +175,35 @@ export class MapViewer3D {
 
   /** Fixed: the stack is always open. See units.ts. */
   private readonly spread = SPREAD;
-  private site: Site | null = null;
-  private apron: { mesh: THREE.Mesh; dispose(): void } | null = null;
+  private labels: MapLabels;
+  private anchors: FloorAnchors | null = null;
+  private tween: CameraTween | null = null;
+  private lastViewState = "";
+  /** Set by a user gesture; the floor check only answers to the user. */
+  private gestureEnded = false;
+  private userMoved = false;
+  private floorCheckTimer = 0;
+  /** The floor this viewer last asked the app for, to tell its own switches apart. */
+  private requestedFloor: FloorId | null = null;
+  /**
+   * Where the map was when somebody chose a floor themselves (a floor chip, a
+   * route). The auto selector leaves that choice alone until the map has moved
+   * well away from it — otherwise tapping "Lower" over Main's busiest corridor
+   * would be undone by the very next nudge.
+   */
+  private pinnedAt: THREE.Vector3 | null = null;
+  private pointerDown: { x: number; y: number; t: number } | null = null;
   private stairColumns: StairColumns | null = null;
   private builtColumnSpread = -1;
   private builtColumnKey = "";
   /** Suppresses auto-focus while the camera is being moved by the app itself. */
   private cameraDriven = false;
+
+  private flight: RouteFlight | null = null;
+  private flightState: FlightState = "idle";
+  /** How the map was tilted and turned before the flight, to frame the whole
+   *  route that way again at the end rather than heading-up and leaned. */
+  private beforeFlight: { el: number; az: number } | null = null;
 
   private onVisibility = () => {
     this.hidden = document.visibilityState === "hidden";
@@ -162,6 +226,35 @@ export class MapViewer3D {
   private onOrbitChange = () => {
     this.applyFloorStates();
     this.invalidate();
+    this.reportViewState();
+    if (this.userMoved && !this.tween && !this.cameraDriven) {
+      window.clearTimeout(this.floorCheckTimer);
+      this.floorCheckTimer = window.setTimeout(this.checkFloorFromView, 260);
+    }
+  };
+  private onGestureStart = () => {
+    this.tween = null; // a finger on the map always beats an animation
+    // A flight too: the camera stays exactly where it was grabbed. The flight
+    // keeps inside the controls' own limits, so handing it over never jumps.
+    if (this.flight) this.endFlight(false);
+    this.userMoved = true;
+    this.gestureEnded = false;
+  };
+  private onGestureEnd = () => {
+    this.gestureEnded = true;
+  };
+  private onPointerDown = (e: PointerEvent) => {
+    this.pointerDown = { x: e.clientX, y: e.clientY, t: performance.now() };
+  };
+  /** A tap (not a drag) on a place name picks that place. */
+  private onPointerUp = (e: PointerEvent) => {
+    const d = this.pointerDown;
+    this.pointerDown = null;
+    if (!d || e.button !== 0) return;
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 500) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const hit = this.labels.hitTest(e.clientX - rect.left, e.clientY - rect.top, this.coarse ? 16 : 8);
+    if (hit) this.cb.onPickPlace?.(hit);
   };
 
   constructor(host: HTMLElement, props: Viewer3DProps, cb: Viewer3DCallbacks) {
@@ -187,8 +280,9 @@ export class MapViewer3D {
     // and this entire scene is near-white paper.
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.shadowMap.enabled = !this.coarse;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoft is deprecated in r185
+    // No shadows: a map is lit evenly. Shadows were the single strongest cue
+    // that this was a model on a table.
+    this.renderer.shadowMap.enabled = false;
     host.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
@@ -196,25 +290,35 @@ export class MapViewer3D {
     this.materials = createMaterials();
     this.textures = new TextureCache(this.renderer);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    // Map controls: one-finger / left drag pans across the floor, the wheel and
+    // a pinch zoom toward the pointer, right-drag (or ctrl/shift-drag) and a
+    // two-finger twist rotate and tilt. Panning stays on the floor's own plane,
+    // so the map slides under the pointer the way a map does.
+    this.controls = new MapControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.055;
-    this.controls.minPolarAngle = CAMERA.minPolarAngle;
-    this.controls.maxPolarAngle = CAMERA.maxPolarAngle;
+    this.controls.dampingFactor = 0.12;
+    this.controls.minPolarAngle = 0;
+    this.controls.maxPolarAngle = (MAX_TILT_DEG * Math.PI) / 180;
     this.controls.minDistance = CAMERA.minDistance;
     this.controls.maxDistance = CAMERA.maxDistance;
-    this.controls.screenSpacePanning = false;
-    this.controls.rotateSpeed = 0.7;
-    this.controls.zoomSpeed = 0.8;
+    this.controls.zoomToCursor = true;
+    this.controls.rotateSpeed = 0.6;
+    this.controls.zoomSpeed = 1.1;
+    this.controls.panSpeed = 1;
+    this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
     this.controls.addEventListener("change", this.onOrbitChange);
-    // Auto-focus: the storey the camera is aimed at becomes the active one.
-    this.controls.addEventListener("end", this.pickFocusFromCamera);
+    this.controls.addEventListener("start", this.onGestureStart);
+    this.controls.addEventListener("end", this.onGestureEnd);
+    this.renderer.domElement.addEventListener("pointerdown", this.onPointerDown);
+    this.renderer.domElement.addEventListener("pointerup", this.onPointerUp);
+
+    this.labels = new MapLabels(host);
 
     this.setupLights();
-    this.setupGround();
+    this.scene.background = new THREE.Color(PALETTE.ground);
 
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
-    this.setupApron();
+    this.syncLabels();
     this.applyFloorStates();
     this.syncStairColumns();
     this.syncRoute();
@@ -278,7 +382,7 @@ export class MapViewer3D {
     const key = new THREE.DirectionalLight(0xfff6e8, 2.2);
     key.position.copy(C).add(new THREE.Vector3(-0.55, 0.72, 0.42).normalize().multiplyScalar(900));
     key.target.position.copy(C);
-    key.castShadow = !this.coarse;
+    key.castShadow = false;
     key.shadow.mapSize.set(2048, 2048);
     const s = R * 0.68;
     key.shadow.camera.left = -s;
@@ -309,34 +413,6 @@ export class MapViewer3D {
     room.dispose?.();
   }
 
-  private setupGround(): void {
-    // Sky, horizon and a ground that fades into it. See site.ts for why the
-    // model needs a world around it rather than a flat void.
-    this.site = buildSite({ shadows: !this.coarse });
-    this.scene.background = this.site.background;
-    for (const o of this.site.objects) this.scene.add(o);
-  }
-
-  /**
-   * Lay the building's footprint on the ground under the stack.
-   *
-   * Built after the storeys, because it reuses the lowest one's slab outline —
-   * the apron has to be the building's real shape or it reads as a rug rather
-   * than as the site the building stands on.
-   */
-  private setupApron(): void {
-    if (this.apron) {
-      this.scene.remove(this.apron.mesh);
-      this.apron.dispose();
-      this.apron = null;
-    }
-    const lower = this.floorParts.get("lower");
-    const slab = lower?.slab.geometry;
-    if (!slab) return;
-    this.apron = buildApron(slab);
-    this.scene.add(this.apron.mesh);
-  }
-
   private ensureFloor(floor: FloorId): FloorParts {
     const existing = this.floorParts.get(floor);
     if (existing) return existing;
@@ -351,8 +427,6 @@ export class MapViewer3D {
     const wallMaterials = [this.materials.wallCap.clone(), this.materials.wallSide.clone()];
     owned.push(...wallMaterials);
     const walls = new THREE.Mesh(wallGeom, wallMaterials);
-    walls.castShadow = !this.coarse;
-    walls.receiveShadow = !this.coarse;
     group.add(walls);
 
     const edgeGeom = buildWallTopEdges(floor, p);
@@ -377,7 +451,6 @@ export class MapViewer3D {
     const slabMaterial = this.materials.slab.clone();
     owned.push(slabMaterial);
     const slab = new THREE.Mesh(top, slabMaterial);
-    slab.receiveShadow = !this.coarse;
     group.add(slab);
 
     const skirtMesh = new THREE.Mesh(skirt, this.materials.slabSkirt);
@@ -450,25 +523,35 @@ export class MapViewer3D {
     // also what makes "flat" read as a plan of ONE floor rather than a bad 3D
     // view — and back in the moment the drag tilts away from it, since this
     // is read straight off the camera's own elevation now.
-    const ghost = ghostOpacityForDimension(dimensionForElevation(this.currentElevationDeg()));
+    const elev = this.currentElevationDeg();
+    const ghost = ghostOpacityForDimension(dimensionForElevation(elev));
+    // Flat, there are no extruded walls at all — the plate draws them. They
+    // grow out of the floor as the view tilts, which is what tells you the
+    // tilt did something, and never get taller than a low partition: this is
+    // a map you can lean, not a model you walk around.
+    const rise = wallRiseForElevation(elev);
 
-    // Every storey is always on screen. Picking a floor changes *emphasis*, not
-    // visibility: this is a map of a three-storey building, and hiding two of
-    // them to look at one throws away the thing 3D was for. The unfocused
-    // storeys stay legible but recede, and go translucent so the focused floor
-    // is never hidden underneath one of them.
+    // Tilted, the storeys below the one being read show through as faint
+    // plates, so you can see there is more building under you. The ones above
+    // stay hidden: they sit between the camera and the floor you are reading,
+    // and a map you have to read through another map is not a map. Ghosts get
+    // no walls either — a ghost is a footprint, not a second model.
     for (const floor of FLOOR_ORDER) {
       const parts = this.floorParts.get(floor);
       if (!parts) continue;
       const focus = FLOOR_INDEX[floor] === activeIdx;
       parts.group.position.y = storeyY(floor, this.spread);
 
-      parts.edges.visible = focus;
       parts.ghostPlate.visible = false;
       parts.ghostOutline.visible = false;
 
-      const hidden = !focus && ghost < 0.02;
-      parts.walls.visible = !hidden;
+      const above = FLOOR_INDEX[floor] > activeIdx;
+      const hidden = !focus && (ghost < 0.02 || above);
+      const wallsUp = focus && rise > 0.02;
+      parts.walls.scale.y = Math.max(rise, 0.001);
+      parts.edges.scale.y = Math.max(rise, 0.001);
+      parts.edges.visible = focus && wallsUp;
+      parts.walls.visible = !hidden && wallsUp;
       parts.slab.visible = !hidden;
       parts.skirt.visible = !hidden;
 
@@ -485,7 +568,6 @@ export class MapViewer3D {
         m.needsUpdate = true;
       }
 
-      parts.walls.castShadow = !this.coarse && focus;
       parts.walls.renderOrder = focus ? 0 : -1;
       parts.slab.renderOrder = focus ? 0 : -1;
     }
@@ -508,7 +590,7 @@ export class MapViewer3D {
     }
     this.floorParts.clear();
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
-    this.setupApron();
+    this.syncLabels();
     this.applyFloorStates();
     for (const f of FLOOR_ORDER) void this.loadFloorTexture(f);
     this.builtColumnSpread = -1;
@@ -529,45 +611,156 @@ export class MapViewer3D {
   private currentElevationDeg(): number {
     const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
     const horiz = Math.hypot(offset.x, offset.z);
-    if (horiz < 1e-6 && Math.abs(offset.y) < 1e-6) return DEFAULT_ELEVATION_DEG; // not placed yet
+    if (horiz < 1e-6 && Math.abs(offset.y) < 1e-6) return MAP_ELEVATION_DEG; // not placed yet
     return (Math.atan2(offset.y, horiz) * 180) / Math.PI;
   }
 
+  /** Compass heading of the top of the screen, degrees clockwise from north. */
+  private currentAzimuthDeg(): number {
+    const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+    return (Math.atan2(offset.x, offset.z) * 180) / Math.PI;
+  }
+
+  private cameraDistance(): number {
+    return this.camera.position.distanceTo(this.controls.target);
+  }
+
+  /** Screen pixels per foot at the middle of the view. */
+  private pxPerFoot(): number {
+    const h = Math.max(1, this.host.clientHeight);
+    return h / (2 * this.cameraDistance() * Math.tan((CAMERA.fov * Math.PI) / 360));
+  }
+
+  private reportViewState(): void {
+    if (!this.cb.onViewChange) return;
+    const tilted = this.currentElevationDeg() < MAP_ELEVATION_DEG - 4;
+    // Heading of the screen's top edge. The camera sits on the far side of
+    // the target from where it looks, so it is the camera's azimuth + 180.
+    let heading = Math.round(-this.currentAzimuthDeg());
+    heading = ((heading % 360) + 360) % 360;
+    const key = `${tilted}:${heading}`;
+    if (key === this.lastViewState) return;
+    this.lastViewState = key;
+    this.cb.onViewChange({ tilted, headingDeg: heading });
+  }
+
   /**
-   * Decide which storey the camera is looking at, and tell the app.
-   *
-   * "Looking at" is the orbit target's height, not the camera's: you can be
-   * above the roof and still be studying the lower level. Nearest storey by Y
-   * wins, with a dead zone so a target sitting almost exactly between two
-   * floors does not flip back and forth as the user nudges the view.
-   *
-   * Skipped entirely when the stack is collapsed — with the camera flattened
-   * to plan every storey is at the same height, so there is nothing to infer
-   * and the answer would be noise.
+   * The auto floor selector. Once a pan or zoom settles, ask autoFloor.ts
+   * whether another storey has clearly more going on under the middle of the
+   * view than the one being shown, and if so, switch to it.
    */
-  private pickFocusFromCamera = () => {
-    if (this.disposed || this.cameraDriven) return;
-    if (this.spread < 6) return;
-    const y = this.controls.target.y;
-    let best: FloorId | null = null;
-    let bestD = Infinity;
-    let secondD = Infinity;
-    for (const floor of FLOOR_ORDER) {
-      const d = Math.abs(storeyY(floor, this.spread) - y);
-      if (d < bestD) {
-        secondD = bestD;
-        bestD = d;
-        best = floor;
-      } else if (d < secondD) {
-        secondD = d;
-      }
+  private checkFloorFromView = () => {
+    if (this.disposed || this.cameraDriven || this.tween || !this.anchors) return;
+    if (!this.gestureEnded) return; // still being dragged; damping will call back
+    this.userMoved = false;
+    this.gestureEnded = false;
+    // The circle that counts as "where you are looking": a bit under half the
+    // visible height. Zoomed right out to the whole school there is nothing
+    // to infer — every floor is in view — so leave the choice alone.
+    const visibleHalf = this.cameraDistance() * Math.tan((CAMERA.fov * Math.PI) / 360) * this.visibleFraction();
+    if (visibleHalf > 520) return;
+    const radius = clamp(visibleHalf * 0.45, 30, 200);
+    const t = this.controls.target;
+    if (this.pinnedAt) {
+      const dx = t.x - this.pinnedAt.x;
+      const dz = t.z - this.pinnedAt.z;
+      if (Math.hypot(dx, dz) < Math.max(160, radius * 2)) return;
+      this.pinnedAt = null;
     }
-    // Ambiguous: the two nearest storeys are within 15% of each other. Leave
-    // the choice alone rather than thrashing it.
-    if (!best || best === this.props.activeFloor) return;
-    if (secondD - bestD < this.spread * 0.15) return;
-    this.cb.onFocusFloor?.(best);
+    const next = pickFloor(this.anchors, FLOOR_ORDER, this.props.activeFloor, t.x, t.z, radius);
+    if (next !== this.props.activeFloor) {
+      this.requestedFloor = next;
+      this.cb.onFocusFloor?.(next);
+    }
   };
+
+  /** Place names and the auto-floor anchors, both from the same points. */
+  private syncLabels(): void {
+    const items = buildLabelItems(this.props.floors, this.placements, this.spread);
+    this.labels.setItems(items);
+    this.labels.setFloor(this.props.activeFloor);
+    const anchors = {} as Record<FloorId, number[]>;
+    for (const f of FLOOR_ORDER) anchors[f] = [];
+    for (const it of items) anchors[it.floor].push(it.world.x, it.world.z);
+    this.anchors = {
+      lower: new Float32Array(anchors.lower),
+      main: new Float32Array(anchors.main),
+      upper: new Float32Array(anchors.upper),
+    };
+    this.invalidate();
+  }
+
+  // ------------------------------------------------------------ map buttons
+
+  /** Zoom in (factor < 1) or out (> 1) about the middle of the view. */
+  zoomBy(factor: number): void {
+    const dist = clamp(this.cameraDistance() * factor, CAMERA.minDistance, CAMERA.maxDistance);
+    this.animateTo(this.controls.target.clone(), dist, this.currentElevationDeg(), this.currentAzimuthDeg(), 260);
+    this.userMoved = true;
+    this.gestureEnded = true;
+  }
+
+  /** Turn back to north-up, keeping zoom and tilt. */
+  resetNorth(): void {
+    this.animateTo(this.controls.target.clone(), this.cameraDistance(), this.currentElevationDeg(), 0, 420);
+  }
+
+  /** Lean the map back, or flatten it again. */
+  toggleTilt(): void {
+    const flat = this.currentElevationDeg() >= MAP_ELEVATION_DEG - 4;
+    this.animateTo(
+      this.controls.target.clone(),
+      this.cameraDistance(),
+      flat ? TILTED_ELEVATION_DEG : MAP_ELEVATION_DEG,
+      this.currentAzimuthDeg(),
+      520
+    );
+  }
+
+  private animateTo(target: THREE.Vector3, dist: number, el: number, az: number, ms: number): void {
+    if (this.reducedMotion || ms <= 0) {
+      this.tween = null;
+      this.placeCamera(target, dist, el, az);
+      return;
+    }
+    // Turn the short way round.
+    const fromAz = this.currentAzimuthDeg();
+    let toAz = az;
+    while (toAz - fromAz > 180) toAz -= 360;
+    while (toAz - fromAz < -180) toAz += 360;
+    this.tween = {
+      from: {
+        target: this.controls.target.clone(),
+        dist: this.cameraDistance(),
+        el: this.currentElevationDeg(),
+        az: fromAz,
+      },
+      to: { target: target.clone(), dist, el, az: toAz },
+      t: 0,
+      duration: ms / 1000,
+    };
+    this.invalidate();
+  }
+
+  private stepTween(dt: number): void {
+    const tw = this.tween;
+    if (!tw) return;
+    tw.t = Math.min(1, tw.t + dt / tw.duration);
+    const k = easeInOutCubic(tw.t);
+    const lerp = (a: number, b: number) => a + (b - a) * k;
+    const target = tw.from.target.clone().lerp(tw.to.target, k);
+    // Always on the floor being shown, even if the floor changed mid-flight.
+    target.y = storeyY(this.props.activeFloor, this.spread);
+    // Distance eases in log space, so a big zoom does not rush the first half.
+    const dist = Math.exp(lerp(Math.log(tw.from.dist), Math.log(tw.to.dist)));
+    this.cameraDriven = true;
+    this.placeCamera(target, dist, lerp(tw.from.el, tw.to.el), lerp(tw.from.az, tw.to.az));
+    this.cameraDriven = false;
+    if (tw.t >= 1) {
+      this.tween = null;
+      if (this.userMoved && this.gestureEnded) this.checkFloorFromView();
+    }
+  }
 
   /** Move the orbit target onto a storey, so "focus" and "look at" agree. */
   private lookAtFloor(floor: FloorId): void {
@@ -637,6 +830,9 @@ export class MapViewer3D {
     const spreadChanged = Math.abs(this.builtRouteSpread - this.spread) > 0.5;
     if (route && routeKey === this.builtRouteKey && !spreadChanged) return;
 
+    // The flight holds the old spine; following it now would fly a route that
+    // is no longer drawn. Whatever replaced it reframes the camera itself.
+    if (this.flight) this.endFlight(false);
     if (this.routeObject) {
       this.scene.remove(this.routeObject.group);
       this.routeObject.dispose();
@@ -661,24 +857,32 @@ export class MapViewer3D {
   }
 
   /** Frame the whole route, or the building when there isn't one. */
-  frameRoute(): void {
+  frameRoute(
+    el = this.currentElevationDeg(),
+    az = this.currentAzimuthDeg(),
+    ms = 650
+  ): void {
     if (!this.route3d) {
       this.resetView();
       return;
     }
+    // Framed on the plan extent, at the height of the floor being shown, and
+    // from wherever the user has the map turned and tilted — a map that snaps
+    // back to north-up every time you ask for directions is fighting you.
     const box = new THREE.Box3();
     const v = new THREE.Vector3();
     const pts = this.route3d.points;
-    for (let i = 0; i < pts.length; i += 3) box.expandByPoint(v.set(pts[i], pts[i + 1], pts[i + 2]));
+    for (let i = 0; i < pts.length; i += 3) box.expandByPoint(v.set(pts[i], 0, pts[i + 2]));
     const centre = box.getCenter(new THREE.Vector3());
+    centre.y = storeyY(this.props.activeFloor, this.spread);
     const size = box.getSize(new THREE.Vector3());
-    const radius = Math.max(size.x, size.z, size.y * 2) * 0.5 + 90;
-    const dist = clamp(
-      radius / Math.tan((CAMERA.fov * Math.PI) / 360) / this.visibleFraction(),
-      CAMERA.minDistance,
-      CAMERA.maxDistance
-    );
-    this.placeCamera(centre, dist, DEFAULT_ELEVATION_DEG, CAMERA.overviewAzimuthDeg);
+    const w = Math.max(1, this.host.clientWidth);
+    const h = Math.max(1, this.host.clientHeight);
+    const halfFov = Math.tan((CAMERA.fov * Math.PI) / 360);
+    const fitH = (size.z * 0.5 + 90) / halfFov / this.visibleFraction();
+    const fitW = (size.x * 0.5 + 90) / halfFov / (w / h);
+    const dist = clamp(Math.max(fitH, fitW), CAMERA.minDistance * 3, CAMERA.maxDistance);
+    this.animateTo(centre, dist, el, az, ms);
   }
 
   /** The centre of the built model, not the page origin — the building only
@@ -687,24 +891,36 @@ export class MapViewer3D {
     const parts = this.floorParts.get("main") ?? this.floorParts.values().next().value;
     const sphere = parts?.walls.geometry.boundingSphere;
     const c = sphere ? sphere.center.clone() : new THREE.Vector3();
-    c.y = storeyY("main", this.spread);
+    c.y = storeyY(this.props.activeFloor, this.spread);
     return c;
   }
 
   resetView(): void {
-    const c = this.modelCentre();
-    const parts = this.floorParts.get("main");
-    const r = parts?.walls.geometry.boundingSphere?.radius ?? 600;
-    // 1.5 left the building as a small island in a lot of ground. The stack is
-    // always open at its full spread, so allow for that as well as the plan
-    // extent rather than padding blindly.
-    const reach = Math.max(r, r * 0.85 + this.spread * 0.9);
-    const dist = clamp(
-      (reach * 1.12) / Math.tan((CAMERA.fov * Math.PI) / 360) / this.visibleFraction(),
-      CAMERA.minDistance,
-      CAMERA.maxDistance
+    // Straight down and north up: the whole school, filling the screen the
+    // way a map opens on the place you searched for. Fitted on the plan's
+    // bounding box, not a sphere round it — the building is far wider than
+    // it is tall, and a sphere leaves it a strip across the middle.
+    // Every storey, because Upper's west wing and Lower's south-east reach
+    // past Main's walls.
+    const box = new THREE.Box3();
+    for (const parts of this.floorParts.values()) {
+      const g = parts.slab.geometry;
+      if (!g.boundingBox) g.computeBoundingBox();
+      if (g.boundingBox) box.union(g.boundingBox);
+    }
+    if (box.isEmpty()) box.set(new THREE.Vector3(-600, 0, -450), new THREE.Vector3(600, 0, 450));
+    const c = box.getCenter(new THREE.Vector3());
+    c.y = storeyY(this.props.activeFloor, this.spread);
+    const size = box.getSize(new THREE.Vector3());
+    const w = Math.max(1, this.host.clientWidth);
+    const h = Math.max(1, this.host.clientHeight);
+    const halfFov = Math.tan((CAMERA.fov * Math.PI) / 360);
+    const fit = Math.max(
+      (size.z * 0.5 * 1.02) / halfFov / this.visibleFraction(),
+      (size.x * 0.5 * 1.02) / halfFov / (w / h)
     );
-    this.placeCamera(c, dist, DEFAULT_ELEVATION_DEG, CAMERA.overviewAzimuthDeg);
+    const dist = clamp(fit, CAMERA.minDistance, CAMERA.maxDistance);
+    this.placeCamera(c, dist, MAP_ELEVATION_DEG, 0);
   }
 
   /**
@@ -760,6 +976,88 @@ export class MapViewer3D {
     this.invalidate();
   }
 
+  // ---------------------------------------------------------------- flight
+
+  /**
+   * Fly the current route: heading-up and leaned back, the camera follows the
+   * walk from start to end, climbing or dropping with it on the stairs while
+   * the floor switches under it (see `FLY` in theme.ts and flight.ts). Any
+   * touch on the map takes the camera back; Stop, or arriving, glides out to
+   * the whole route.
+   *
+   * With reduced motion it does not glide: it cuts from one direction step to
+   * the next, holding each, and cuts back to the overview at the end.
+   */
+  startFlight(): void {
+    if (this.disposed || !this.route3d || this.route3d.totalFt <= 0) return;
+    this.tween = null;
+    window.clearTimeout(this.floorCheckTimer);
+    this.userMoved = false; // the floor follows the flight, not the view
+    if (!this.flight) {
+      this.beforeFlight = { el: this.currentElevationDeg(), az: this.currentAzimuthDeg() };
+    }
+    this.flight = new RouteFlight(this.route3d, this.currentPose(), this.reducedMotion);
+    this.setFlightState("flying");
+    this.invalidate();
+  }
+
+  pauseFlight(): void {
+    if (this.flight && this.flightState === "flying") this.setFlightState("paused");
+  }
+
+  resumeFlight(): void {
+    if (this.flight && this.flightState === "paused") this.setFlightState("flying");
+  }
+
+  /** Stop and show the whole route again — the Stop button, as opposed to a
+   *  drag, which leaves the camera where it is. */
+  stopFlight(): void {
+    if (this.flight) this.endFlight(true);
+  }
+
+  private endFlight(reframe: boolean): void {
+    this.flight = null;
+    this.setFlightState("idle");
+    const before = this.beforeFlight;
+    this.beforeFlight = null;
+    if (reframe && before) this.frameRoute(before.el, before.az, FLY.outroMs);
+  }
+
+  private setFlightState(state: FlightState): void {
+    if (state === this.flightState) return;
+    this.flightState = state;
+    this.cb.onFlightChange?.(state);
+  }
+
+  private currentPose(): OrbitPose {
+    return {
+      target: this.controls.target.clone(),
+      dist: this.cameraDistance(),
+      el: this.currentElevationDeg(),
+      az: this.currentAzimuthDeg(),
+    };
+  }
+
+  private stepFlight(dt: number): void {
+    const flight = this.flight;
+    if (!flight) return;
+    const pose = flight.step(dt);
+    this.cameraDriven = true;
+    this.placeCamera(pose.target, pose.dist, pose.el, pose.az);
+    this.cameraDriven = false;
+
+    // The floor being read is the one the route is on, switching halfway up
+    // (or down) the stairs: by then the ribbon is closer to the next storey
+    // than the last, and the next one's names are the ones coming up.
+    const idx = Math.round(flight.floorIndex());
+    const floor = FLOOR_ORDER.find((f) => FLOOR_INDEX[f] === idx);
+    if (floor && floor !== this.props.activeFloor && floor !== this.requestedFloor) {
+      this.requestedFloor = floor; // asked for by the viewer, so not a pin
+      this.cb.onFocusFloor?.(floor);
+    }
+    if (flight.done) this.endFlight(true);
+  }
+
   // ------------------------------------------------------------- lifecycle
 
   update(next: Viewer3DProps): void {
@@ -773,10 +1071,17 @@ export class MapViewer3D {
       this.rebuildForAlignment();
     }
 
+    if (prev.floors !== next.floors) this.syncLabels();
+
     const floorChanged = prev.activeFloor !== next.activeFloor;
     if (floorChanged) {
+      // Not one this viewer asked for, so a person (or a route) chose it.
+      this.pinnedAt = next.activeFloor === this.requestedFloor ? null : this.controls.target.clone();
+      this.requestedFloor = null;
+      this.labels.setFloor(next.activeFloor);
       this.applyFloorStates();
-      this.lookAtFloor(next.activeFloor);
+      // In flight the floor follows the camera, not the other way round.
+      if (!this.flight) this.lookAtFloor(next.activeFloor);
       for (const f of FLOOR_ORDER) void this.loadFloorTexture(f);
       this.invalidate();
     }
@@ -818,6 +1123,8 @@ export class MapViewer3D {
 
     const animating = this.routeObject !== null && !this.reducedMotion;
     if (animating) this.routeObject?.update(dt);
+    if (this.tween) this.stepTween(dt || 1 / 60);
+    if (this.flight && this.flightState === "flying") this.stepFlight(dt || 1 / 60);
 
     // controls.update() returns true while damping is still settling. The
     // previous guard tested `enableDamping`, which is a constant true, so the
@@ -827,6 +1134,13 @@ export class MapViewer3D {
     if (!this.dirty && !animating && !settling) return;
 
     this.renderer.render(this.scene, this.camera);
+    this.labels.layout(
+      this.camera,
+      Math.max(1, this.host.clientWidth),
+      Math.max(1, this.host.clientHeight),
+      this.pxPerFoot(),
+      false
+    );
     this.dirty = false;
   };
 
@@ -837,9 +1151,15 @@ export class MapViewer3D {
     this.ro.disconnect();
     document.removeEventListener("visibilitychange", this.onVisibility);
     this.renderer.domElement.removeEventListener("webglcontextlost", this.onContextLost);
+    window.clearTimeout(this.floorCheckTimer);
     this.controls.removeEventListener("change", this.onOrbitChange);
-    this.controls.removeEventListener("end", this.pickFocusFromCamera);
+    this.controls.removeEventListener("start", this.onGestureStart);
+    this.controls.removeEventListener("end", this.onGestureEnd);
+    this.renderer.domElement.removeEventListener("pointerdown", this.onPointerDown);
+    this.renderer.domElement.removeEventListener("pointerup", this.onPointerUp);
     this.controls.dispose();
+    this.labels.dispose();
+    this.flight = null;
 
     if (this.routeObject) {
       this.scene.remove(this.routeObject.group);
@@ -850,16 +1170,6 @@ export class MapViewer3D {
       this.scene.remove(this.stairColumns.group);
       this.stairColumns.dispose();
       this.stairColumns = null;
-    }
-    if (this.apron) {
-      this.scene.remove(this.apron.mesh);
-      this.apron.dispose();
-      this.apron = null;
-    }
-    if (this.site) {
-      for (const o of this.site.objects) this.scene.remove(o);
-      this.site.dispose();
-      this.site = null;
     }
     this.scene.background = null;
     for (const parts of this.floorParts.values()) {

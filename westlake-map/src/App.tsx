@@ -29,6 +29,7 @@ import {
 import { buildProposal, downloadProposal } from "./lib/proposal";
 import { reviewFor } from "./lib/scanReview";
 import type { FloorData, FloorId, FloorPoint } from "./types";
+import type { MapLabelItem } from "./three/labels";
 import "./App.css";
 
 const FLOOR_SHORT: Record<FloorId, string> = { lower: "Lower", main: "Main", upper: "Upper" };
@@ -44,7 +45,9 @@ export default function App() {
   const markCount = useMemo(() => stairMarks(floors).length, [floors]);
   const [floorId, setFloorId] = useState<FloorId>("main");
 
-  const [showStairColumns, setShowStairColumns] = useState(true);
+  // Off by default: the columns are an alignment instrument for editors, and
+  // on the everyday map they are coloured sticks through the floor.
+  const [showStairColumns, setShowStairColumns] = useState(false);
   const [placements, setPlacements] = useState(initialPlacements);
 
   const [fromQuery, setFromQuery] = useState("Chap Court Entrance (C)");
@@ -283,6 +286,30 @@ export default function App() {
     setFloorId(f);
     const i = segments.findIndex((s) => s.floor === f);
     if (i >= 0) setSegIndex(i);
+  }
+
+  // The floor picked itself (see three/autoFloor.ts). Say so, briefly, next to
+  // the floor control — a map that changes floor without a word looks like it
+  // glitched.
+  const [floorNote, setFloorNote] = useState<string | null>(null);
+  const floorNoteTimer = useRef(0);
+  function autoSwitchFloor(f: FloorId) {
+    switchFloor(f);
+    setFloorNote(FLOOR_LABELS[f]);
+    window.clearTimeout(floorNoteTimer.current);
+    floorNoteTimer.current = window.setTimeout(() => setFloorNote(null), 1800);
+  }
+
+  /** A place name tapped on the map becomes the destination. */
+  function pickPlace(place: MapLabelItem) {
+    const item =
+      place.kind === "entrance"
+        ? searchIndex.find((i) => i.kind === "entrance" && i.label === place.text)
+        : searchIndex.find((i) => i.key === `${place.floor}:${place.id}`);
+    if (!item) return;
+    setToItem(item);
+    setToQuery(item.label);
+    setSheetOpen(true);
   }
 
   function focusStep(i: number) {
@@ -759,7 +786,7 @@ export default function App() {
             <p className="tool-hint">
               The three plans are separate scans with no registration marks, so where a storey sits
               relative to the others is a fit through a handful of shared entrances — out by
-              anywhere from 10 to 51 ft. Step out of editing, drag to tilt the 3D view, and watch
+              anywhere from 10 to 51 ft. Step out of editing, tilt the map with the 3D button, and watch
               the coloured stairwell columns: where two floors are misaligned, the column joining
               them <em>leans</em>. Nudge until it stands up.
             </p>
@@ -894,7 +921,6 @@ export default function App() {
 
           <p className="roadmap-title">Coming later</p>
           <ul className="chip-list">
-            <li>Fly the route</li>
             <li>Teacher search</li>
             <li>Photo walkthroughs</li>
           </ul>
@@ -969,10 +995,15 @@ export default function App() {
             activeStep={activeStep}
             obscuredBottom={obscuredBottomPx}
             onPickFloor={switchFloor}
-            // Auto-focus: orbit onto a storey and it becomes the active floor,
-            // so the panel, the badge and the model never disagree about which
-            // one you are reading.
-            onFocusFloor={setFloorId}
+            // The auto floor selector: settle the map on part of the school
+            // where another storey has clearly more to show, and that storey
+            // becomes the one you are reading.
+            onFocusFloor={autoSwitchFloor}
+            onPickPlace={pickPlace}
+            // On a phone the sheet covers half the map; a flight wants all of it.
+            onFlightChange={(state) => {
+              if (state === "flying") setSheetOpen(false);
+            }}
           />
           </Suspense>
         )}
@@ -992,8 +1023,9 @@ export default function App() {
         )}
 
         {/* The floor picks itself — from the route you asked for, and from the
-            storey you orbit onto. This is the readout for that, stacked in the
-            order the floors actually are, and you can still override it. */}
+            part of the school you pan and zoom onto. This is the readout for
+            that, stacked in the order the floors actually are, and you can
+            still override it. */}
         <div className="floor-stack" role="group" aria-label="Floor">
           {[...FLOOR_ORDER].reverse().map((f) => (
             <button
@@ -1006,15 +1038,24 @@ export default function App() {
               {segments.some((s) => s.floor === f) && <span className="route-dot" />}
             </button>
           ))}
+          {floorNote && !editMode && (
+            <span className="floor-note" role="status">
+              {floorNote}
+            </span>
+          )}
         </div>
 
         {destLabel && !editMode && <div className="map-badge">→ {destLabel}</div>}
 
-        {/* Drag already tilts the view (it's the OrbitControls rotate gesture),
-            so there is no separate control for it any more. Panning is the one
-            gesture that isn't the obvious one-finger drag, so it's the one that
-            gets said out loud. */}
-        {view === "3d" && <div className="pan-hint">Drag to tilt · right-click or two fingers to pan</div>}
+        {/* Dragging moves the map, as on any map. Tilting and turning are the
+            gestures nobody guesses, so they are the ones said out loud. */}
+        {view === "3d" && (
+          <div className="pan-hint">
+            {matchMedia("(pointer: coarse)").matches
+              ? "Pinch to zoom · twist with two fingers to turn"
+              : "Drag to move · scroll to zoom · right-drag to tilt"}
+          </div>
+        )}
       </main>
 
       {/* One panel: a sidebar on a laptop, a bottom sheet over the map on a
