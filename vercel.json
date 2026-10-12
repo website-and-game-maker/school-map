@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd westlake-map && npm ci",
+  "buildCommand": "cd westlake-map && npm run build",
+  "outputDirectory": "westlake-map/dist",
+  "framework": null
+}
