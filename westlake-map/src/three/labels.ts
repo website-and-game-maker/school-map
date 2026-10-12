@@ -18,11 +18,12 @@
 
 import * as THREE from "three";
 
-import { placeCategory } from "../lib/placeCategory";
+import { PLACE_INK, placeCategory } from "../lib/placeCategory";
 import type { FloorData, FloorId, FloorPoint } from "../types";
 import type { PlacementSet } from "./placement";
 import { planToWorld } from "./placement";
 import { storeyY } from "./units";
+import { categoryIcon } from "./icons";
 
 export type LabelKind = "landmark" | "entrance" | "room" | "restroom" | "stairs" | "street" | "ground";
 
@@ -119,12 +120,24 @@ export class MapLabels {
   private floor: FloorId | null = null;
   private all: MapLabelItem[] = [];
   private v = new THREE.Vector3();
+  /** The blue "you are here" dot: drawn under the names, never culled by them. */
+  private hereNode: HTMLDivElement;
+  private here: { at: THREE.Vector3; floor: FloorId } | null = null;
 
   constructor(host: HTMLElement) {
+    this.hereNode = document.createElement("div");
+    this.hereNode.className = "map-here";
+    this.hereNode.setAttribute("aria-hidden", "true");
+    this.hereNode.style.visibility = "hidden";
+    host.appendChild(this.hereNode);
     this.el = document.createElement("div");
     this.el.className = "map-labels";
     this.el.setAttribute("aria-hidden", "true");
     host.appendChild(this.el);
+  }
+
+  setHere(at: THREE.Vector3 | null, floor: FloorId | null): void {
+    this.here = at && floor ? { at: at.clone(), floor } : null;
   }
 
   /** Replace the set of places. Cheap enough to call on any data change. */
@@ -145,13 +158,17 @@ export class MapLabels {
       const node = document.createElement("div");
       node.className = `map-label map-label-${item.kind}`;
       if (item.kind === "landmark") {
-        // A coloured dot by what kind of place it is, like a map's POI pins.
-        node.classList.add(`map-label-cat-${placeCategory(item.text)}`);
-        const dot = document.createElement("span");
-        dot.className = "map-label-dot";
-        node.appendChild(dot);
-      }
-      if (item.kind === "restroom" || item.kind === "stairs" || item.kind === "entrance") {
+        // A coloured pin, the way a street map marks a park or a café.
+        const cat = placeCategory(item.text);
+        const ink = PLACE_INK[cat];
+        node.classList.add(`map-label-cat-${cat}`);
+        const icon = document.createElement("span");
+        icon.className = "map-label-icon map-label-pin";
+        icon.style.background = ink;
+        icon.appendChild(categoryIcon(cat));
+        node.appendChild(icon);
+        node.style.color = ink;
+      } else if (item.kind === "restroom" || item.kind === "stairs" || item.kind === "entrance") {
         const icon = document.createElement("span");
         icon.className = "map-label-icon";
         icon.textContent =
@@ -179,6 +196,19 @@ export class MapLabels {
    */
   layout(camera: THREE.Camera, w: number, h: number, pxPerFoot: number, hidden: boolean): void {
     const boxes: number[] = [];
+    let hereShown = false;
+    if (this.here && !hidden && this.here.floor === this.floor) {
+      this.v.copy(this.here.at).project(camera);
+      if (this.v.z <= 1 && this.v.z >= -1) {
+        const x = ((this.v.x + 1) / 2) * w;
+        const y = ((1 - this.v.y) / 2) * h;
+        this.hereNode.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+        hereShown = true;
+        // Names keep clear of the dot, the way a map app's own location does.
+        boxes.push(x - 12, y - 12, x + 12, y + 12);
+      }
+    }
+    this.hereNode.style.visibility = hereShown ? "visible" : "hidden";
     const showRooms = pxPerFoot >= ROOM_MIN_PX_PER_FOOT;
     for (const p of this.placed) {
       let show = !hidden && (p.item.kind !== "room" || showRooms);
@@ -236,6 +266,7 @@ export class MapLabels {
 
   dispose(): void {
     this.el.remove();
+    this.hereNode.remove();
     this.placed = [];
   }
 }

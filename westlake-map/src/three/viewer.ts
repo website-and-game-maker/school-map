@@ -42,7 +42,7 @@ import {
 import { MapLabels, buildLabelItems, type MapLabelItem } from "./labels";
 import { pickFloor, type FloorAnchors } from "./autoFloor";
 import { buildStairColumns, type StairColumns } from "./stairColumns";
-import { type PlacementSet } from "./placement";
+import { planToWorld, type PlacementSet } from "./placement";
 import { buildWallGeometry, buildWallTopEdges } from "./walls";
 import { buildSlabGeometry } from "./slab";
 import { buildOutdoor, createAttribution, type OutdoorLayer } from "./outdoor";
@@ -97,6 +97,13 @@ export interface Viewer3DProps {
    * centre moves to the middle of what is left, and framing fits that.
    */
   obscuredLeft?: number;
+  /**
+   * Where the person is standing, once they have told the map (the camera
+   * reader or "I'm next to…"). Drawn as a blue dot; the map flies to it.
+   */
+  here?: { floor: FloorId; id: string } | null;
+  /** Bumped by the app to hand the floor back to the auto selector. */
+  autoFloorToken?: number;
 }
 
 export interface MapViewState {
@@ -107,6 +114,8 @@ export interface MapViewState {
 }
 
 export interface Viewer3DCallbacks {
+  /** The floor was chosen by hand (or by locating), so auto is holding off. */
+  onPinChange?: (pinned: boolean) => void;
   onPickFloor?: (f: FloorId) => void;
   /**
    * The map settled on part of the school where another floor has clearly
@@ -147,7 +156,11 @@ interface FloorParts {
   texSize: number | null;
 }
 
-const TEX_FOCUS = 2048;
+// The plate is the map, and a map is read zoomed in: at 2048 a classroom wall
+// was a staircase of texels by the time room numbers appeared. A phone gets a
+// bit less, since one lost WebGL context costs more than slightly soft ink.
+const TEX_FOCUS =
+  typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? 3072 : 4096;
 const TEX_GHOST = 1024;
 
 export class MapViewer3D {
@@ -208,6 +221,7 @@ export class MapViewer3D {
   /** Suppresses auto-focus while the camera is being moved by the app itself. */
   private cameraDriven = false;
 
+  private routeFramedAt = -Infinity;
   private flight: RouteFlight | null = null;
   private flightState: FlightState = "idle";
   /** How the map was tilted and turned before the flight, to frame the whole
@@ -332,6 +346,7 @@ export class MapViewer3D {
 
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
     this.syncLabels();
+    this.syncHere(false);
     this.applyFloorStates();
     this.syncStairColumns();
     this.syncRoute();
@@ -683,7 +698,7 @@ export class MapViewer3D {
       const dx = t.x - this.pinnedAt.x;
       const dz = t.z - this.pinnedAt.z;
       if (Math.hypot(dx, dz) < Math.max(160, radius * 2)) return;
-      this.pinnedAt = null;
+      this.setPin(null);
     }
     const next = pickFloor(this.anchors, FLOOR_ORDER, this.props.activeFloor, t.x, t.z, radius);
     if (next !== this.props.activeFloor) {
@@ -691,6 +706,31 @@ export class MapViewer3D {
       this.cb.onFocusFloor?.(next);
     }
   };
+
+  private setPin(at: THREE.Vector3 | null): void {
+    const was = this.pinnedAt !== null;
+    this.pinnedAt = at;
+    if (was !== (at !== null)) this.cb.onPinChange?.(at !== null);
+  }
+
+  /** The "you are here" dot, and a short flight to it. */
+  private syncHere(fly: boolean): void {
+    const here = this.props.here;
+    const p = here ? this.props.floors[here.floor]?.points[here.id] : undefined;
+    if (!here || !p) {
+      this.labels.setHere(null, null);
+      this.invalidate();
+      return;
+    }
+    const [wx, wy, wz] = planToWorld(this.placements[here.floor], p.x, p.y, storeyY(here.floor, this.spread));
+    const at = new THREE.Vector3(wx, wy, wz);
+    this.labels.setHere(at, here.floor);
+    if (fly) {
+      const dist = clamp(Math.min(this.cameraDistance(), 320), CAMERA.minDistance, CAMERA.maxDistance);
+      this.animateTo(at, dist, this.currentElevationDeg(), this.currentAzimuthDeg(), 600);
+    }
+    this.invalidate();
+  }
 
   /** Place names and the auto-floor anchors, both from the same points. */
   private syncLabels(): void {
@@ -1117,7 +1157,7 @@ export class MapViewer3D {
     const floorChanged = prev.activeFloor !== next.activeFloor;
     if (floorChanged) {
       // Not one this viewer asked for, so a person (or a route) chose it.
-      this.pinnedAt = next.activeFloor === this.requestedFloor ? null : this.controls.target.clone();
+      this.setPin(next.activeFloor === this.requestedFloor ? null : this.controls.target.clone());
       this.requestedFloor = null;
       this.labels.setFloor(next.activeFloor);
       this.applyFloorStates();
@@ -1134,11 +1174,27 @@ export class MapViewer3D {
       this.syncRoute();
       this.applyFloorStates();
       this.frameRoute();
+      this.routeFramedAt = performance.now();
     }
 
     if (prev.obscuredBottom !== next.obscuredBottom || prev.obscuredLeft !== next.obscuredLeft) {
       this.applyViewOffset();
+      // The panel usually opens with the route that fills it, a frame or two
+      // after the route was framed for an uncovered map. Frame it again for
+      // the part that is still visible, or the route sits under the panel.
+      if (next.route && performance.now() - this.routeFramedAt < 1500 && !this.flight) this.frameRoute();
       this.invalidate();
+    }
+
+    const hereKey = (h: Viewer3DProps["here"]) => (h ? `${h.floor}:${h.id}` : "");
+    if (hereKey(prev.here) !== hereKey(next.here)) this.syncHere(true);
+    else if (prev.floors !== next.floors || prev.placements !== next.placements) this.syncHere(false);
+
+    if ((prev.autoFloorToken ?? 0) !== (next.autoFloorToken ?? 0)) {
+      // "Auto" tapped: drop the pin and let the view decide right now.
+      this.setPin(null);
+      this.gestureEnded = true;
+      this.checkFloorFromView();
     }
   }
 
