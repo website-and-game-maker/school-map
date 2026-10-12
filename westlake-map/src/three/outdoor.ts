@@ -35,10 +35,10 @@ const DATA = outdoor as unknown as OutdoorFile;
 export const OUTDOOR_ATTRIBUTION = DATA.source;
 
 const AREA_COLOR: Record<AreaKind, number> = {
-  school: 0xe5e1d8,
+  school: 0xe1e3ea,
   wood: 0xd2dec3,
   grass: 0xdae6cb,
-  parking: 0xdfdbd4,
+  parking: 0xdee1e5,
   pitch: 0xc8dcb2,
   track: 0xe2cbbb,
   water: 0xb6d4e1,
@@ -49,16 +49,16 @@ const AREA_ORDER: AreaKind[] = ["school", "wood", "grass", "parking", "track", "
 
 /** Width in feet of the casing (outline) and fill of each kind of road. */
 const ROAD_STYLE: Record<RoadKind, { casing: number; fill: number; color: number }> = {
-  path: { casing: 0, fill: 4, color: 0xf8f6f1 },
+  path: { casing: 0, fill: 4, color: 0xf7f8fa },
   service: { casing: 15, fill: 11, color: 0xffffff },
   minor: { casing: 28, fill: 22, color: 0xffffff },
-  major: { casing: 42, fill: 34, color: 0xfff6dc },
+  major: { casing: 42, fill: 34, color: 0xfdf0c4 },
 };
 const ROAD_ORDER: RoadKind[] = ["path", "service", "minor", "major"];
-const CASING = 0xcdc5b9;
+const CASING = 0xd2d5da;
 
-const BUILDING_FILL = 0xdcd6cc;
-const BUILDING_LINE = 0xbfb5a7;
+const BUILDING_FILL = 0xd9dbe0;
+const BUILDING_LINE = 0xc5c8ce;
 
 export interface OutdoorLabel {
   text: string;

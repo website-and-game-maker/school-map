@@ -951,7 +951,7 @@ button { font-family: inherit; }
 /* The world outside the school (three/outdoor.ts): quieter than any of the
    school's own names, the way a street map treats its base layer. */
 .map-label-ground { font-size: 10.5px; font-weight: 500; color: #5f7a4f; font-style: italic; }
-.map-label-street { font-size: 10.5px; font-weight: 500; color: #8a8276; letter-spacing: 0.02em; }
+.map-label-street { font-size: 10.5px; font-weight: 500; color: #7a7f87; letter-spacing: 0.02em; }
 
 /* OpenStreetMap's licence asks for this credit wherever its data is shown. */
 .map-attribution {
@@ -965,7 +965,7 @@ button { font-family: inherit; }
   background: rgba(255, 255, 255, 0.72);
   border-top-left-radius: 4px;
 }
-.map-attribution a { color: #6b665f; text-decoration: none; }
+.map-attribution a { color: #5f6368; text-decoration: none; }
 .map-attribution a:hover { text-decoration: underline; }
 
 /* ---------------- zoom / compass / tilt (right edge of the map) ---------- */
