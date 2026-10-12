@@ -948,6 +948,26 @@ button { font-family: inherit; }
 .map-label-restroom .map-label-text,
 .map-label-stairs .map-label-text { display: none; }
 
+/* The world outside the school (three/outdoor.ts): quieter than any of the
+   school's own names, the way a street map treats its base layer. */
+.map-label-ground { font-size: 10.5px; font-weight: 500; color: #5f7a4f; font-style: italic; }
+.map-label-street { font-size: 10.5px; font-weight: 500; color: #7a7f87; letter-spacing: 0.02em; }
+
+/* OpenStreetMap's licence asks for this credit wherever its data is shown. */
+.map-attribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.72);
+  border-top-left-radius: 4px;
+}
+.map-attribution a { color: #5f6368; text-decoration: none; }
+.map-attribution a:hover { text-decoration: underline; }
+
 /* ---------------- zoom / compass / tilt (right edge of the map) ---------- */
 
 /* Bottom right, where every map app keeps them. */

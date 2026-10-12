@@ -45,6 +45,7 @@ import { buildStairColumns, type StairColumns } from "./stairColumns";
 import { type PlacementSet } from "./placement";
 import { buildWallGeometry, buildWallTopEdges } from "./walls";
 import { buildSlabGeometry } from "./slab";
+import { buildOutdoor, createAttribution, type OutdoorLayer } from "./outdoor";
 import { TextureCache } from "./textures";
 import { liftRoute, type Route3D } from "./routeLift";
 import { buildRouteObject, type RouteObject } from "./routeObject";
@@ -165,6 +166,8 @@ export class MapViewer3D {
   private envTexture: THREE.Texture | null = null;
 
   private floorParts = new Map<FloorId, FloorParts>();
+  private outdoor: OutdoorLayer;
+  private attribution: HTMLElement;
   private routeObject: RouteObject | null = null;
   private route3d: Route3D | null = null;
   private builtRouteKey = "";
@@ -322,6 +325,10 @@ export class MapViewer3D {
 
     this.setupLights();
     this.scene.background = new THREE.Color(PALETTE.ground);
+
+    this.outdoor = buildOutdoor();
+    this.scene.add(this.outdoor.group);
+    this.attribution = createAttribution(host);
 
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
     this.syncLabels();
@@ -537,6 +544,11 @@ export class MapViewer3D {
     // a map you can lean, not a model you walk around.
     const rise = wallRiseForElevation(elev);
 
+    // The streets and fields follow the storey being read, a foot under its
+    // slab, so every floor is seen in its surroundings and the slab covers
+    // the building's own outline.
+    this.outdoor.group.position.y = storeyY(this.props.activeFloor, this.spread) - 1;
+
     // Tilted, the storeys below the one being read show through as faint
     // plates, so you can see there is more building under you. The ones above
     // stay hidden: they sit between the camera and the floor you are reading,
@@ -683,11 +695,26 @@ export class MapViewer3D {
   /** Place names and the auto-floor anchors, both from the same points. */
   private syncLabels(): void {
     const items = buildLabelItems(this.props.floors, this.placements, this.spread);
-    this.labels.setItems(items);
-    this.labels.setFloor(this.props.activeFloor);
     const anchors = {} as Record<FloorId, number[]>;
     for (const f of FLOOR_ORDER) anchors[f] = [];
+    // Anchors before the outdoor names go in: autoFloor counts the school's
+    // places, and a street name is on every floor at once.
     for (const it of items) anchors[it.floor].push(it.world.x, it.world.z);
+    for (const f of FLOOR_ORDER) {
+      const y = storeyY(f, this.spread);
+      this.outdoor.labels.forEach((l, i) =>
+        items.push({
+          key: `${f}:outdoor:${i}`,
+          floor: f,
+          id: "",
+          text: l.text,
+          kind: l.kind === "road" ? "street" : "ground",
+          world: new THREE.Vector3(l.x, y, l.z),
+        })
+      );
+    }
+    this.labels.setItems(items);
+    this.labels.setFloor(this.props.activeFloor);
     this.anchors = {
       lower: new Float32Array(anchors.lower),
       main: new Float32Array(anchors.main),
@@ -1173,6 +1200,7 @@ export class MapViewer3D {
     this.renderer.domElement.removeEventListener("pointerup", this.onPointerUp);
     this.controls.dispose();
     this.labels.dispose();
+    this.attribution.remove();
     this.flight = null;
 
     if (this.routeObject) {
@@ -1186,6 +1214,8 @@ export class MapViewer3D {
       this.stairColumns = null;
     }
     this.scene.background = null;
+    this.scene.remove(this.outdoor.group);
+    this.outdoor.dispose();
     for (const parts of this.floorParts.values()) {
       this.scene.remove(parts.group);
       for (const o of parts.owned) o.dispose();
