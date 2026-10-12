@@ -64,8 +64,14 @@ export default function SchedulePanel({
   );
 
   useEffect(() => {
-    if (schedule) saveSchedule(schedule);
-  }, [schedule]);
+    // An untouched blank form (opened from the chip, closed again) is not a
+    // schedule: saving it would skip the collapsed button on every visit.
+    if (!schedule) return;
+    const touched =
+      schedule.periods.some((p) => p.room.trim()) ||
+      (schedule.arriveFrom?.key ?? null) !== defaultArriveKey(searchIndex);
+    if (touched) saveSchedule(schedule);
+  }, [schedule, searchIndex]);
 
   // The same default start the app itself uses: the Chap Court entrance.
   const defaultArrive = useMemo(() => chapCourt(searchIndex), [searchIndex]);
@@ -83,6 +89,7 @@ export default function SchedulePanel({
     setSchedule(null);
     setOpen(false);
     setEditing(true);
+    onClose?.();
   }
 
   const update = (fn: (s: Schedule) => Schedule) => setSchedule((s) => (s ? fn(s) : s));
@@ -326,6 +333,10 @@ function RoomField({
       )}
     </div>
   );
+}
+
+function defaultArriveKey(searchIndex: SearchItem[]): string | null {
+  return chapCourt(searchIndex)?.key ?? null;
 }
 
 function chapCourt(searchIndex: SearchItem[]): Schedule["arriveFrom"] {

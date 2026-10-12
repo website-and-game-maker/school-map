@@ -18,12 +18,13 @@ export function placeCategory(name: string): PlaceCategory {
   return "other";
 }
 
-/** The pin and label colour for each kind: the darker partner of PLACE_FILL. */
+/** The pin and label colour for each kind: the darker partner of PLACE_FILL, dark
+ *  enough to read as text on the white label halo. */
 export const PLACE_INK: Record<PlaceCategory, string> = {
-  sports: "#1e8e3e",
-  food: "#e8710a",
-  learning: "#1a73e8",
-  arts: "#9334e6",
+  sports: "#188038",
+  food: "#c26401",
+  learning: "#1967d2",
+  arts: "#8430ce",
   office: "#5f6368",
   other: "#188038",
 };

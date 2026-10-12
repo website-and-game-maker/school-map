@@ -99,7 +99,9 @@ export default function App() {
     const panel = panelShellRef.current;
     const phone = matchMedia(PHONE_QUERY).matches;
     // A hidden panel (no route, nothing opened) covers nothing.
-    const shown = Boolean(panel && panel.offsetParent !== null);
+    // (Not offsetParent: the phone sheet is position:fixed, whose offsetParent
+    // is always null.)
+    const shown = Boolean(panel && getComputedStyle(panel).display !== "none");
     const px =
       area && panel && shown && phone
         ? Math.max(0, Math.round(area.getBoundingClientRect().bottom - panel.getBoundingClientRect().top))
@@ -312,10 +314,13 @@ export default function App() {
   const [autoFloorToken, setAutoFloorToken] = useState(0);
   // "Where am I?": the room sign you read or typed, drawn as a blue dot.
   const [here, setHere] = useState<SearchItem | null>(null);
+  // Bumped per locate, so reading the same sign again still flies back to it.
+  const [hereN, setHereN] = useState(0);
   const [locateOpen, setLocateOpen] = useState(false);
   function located(item: SearchItem) {
     setLocateOpen(false);
     setHere(item);
+    setHereN((n) => n + 1);
     // Where you are is where you start from.
     setFromItem(item);
     setFromQuery(item.label);
@@ -366,6 +371,7 @@ export default function App() {
   }
 
   function clearRoute() {
+    setTripOpen(false);
     setToItem(null);
     setToQuery("");
     setActiveStep(null);
@@ -557,9 +563,19 @@ export default function App() {
 
   // What the floating panel is showing, if anything. Directions win whenever
   // there is a destination; otherwise it is whatever the menu or a chip opened.
+  // Once open, the directions card stays open while its To field is being
+  // retyped (which clears toItem on every keystroke); only × or clearing the
+  // route closes it.
+  const [tripOpen, setTripOpen] = useState(false);
+  const [tripFor, setTripFor] = useState<SearchItem | null>(null);
+  if (toItem !== tripFor) {
+    setTripFor(toItem);
+    if (toItem) setTripOpen(true);
+  }
+  const showTrip = tripOpen || toItem !== null;
   const panelMode: "none" | "directions" | "schedule" | "about" | "edit" = editMode
     ? "edit"
-    : toItem
+    : showTrip
       ? "directions"
       : sheet;
   const panelTitle =
@@ -658,8 +674,8 @@ export default function App() {
           {routeMissing && (
             <p className="notice">
               I know where <strong>{toItem?.label}</strong> is, but no traced hallway reaches it yet,
-              so there's nothing to route along. <strong>Edit this floor</strong> below — drop a
-              couple of hallway points and connect them — and the route will appear.
+              so there's nothing to route along. Editors can add the hallway from{" "}
+              <strong>Edit this floor</strong> in the menu, and the route will appear.
             </p>
           )}
 
@@ -706,7 +722,7 @@ export default function App() {
 
               {routeResult.stairs.length > 0 && (
                 <p className="hint">
-                  Stair locations are still a best guess — see the note at the bottom.
+                  Stair locations are still a best guess — see About this map in the menu.
                 </p>
               )}
               <button className="clear-btn" onClick={clearRoute}>
@@ -1050,7 +1066,7 @@ export default function App() {
             // becomes the one you are reading.
             onFocusFloor={autoSwitchFloor}
             onPickPlace={pickPlace}
-            here={here ? { floor: here.floor, id: here.id } : null}
+            here={here ? { floor: here.floor, id: here.id, n: hereN } : null}
             autoFloorToken={autoFloorToken}
             onPinChange={setFloorPinned}
             // On a phone the sheet covers half the map; a flight wants all of it.
@@ -1116,7 +1132,7 @@ export default function App() {
       {/* The search bar floats over the map, as on any map app, with a row of
           one-tap destinations under it. It gives way to the directions card
           once a destination is picked. */}
-      {!editMode && !toItem && (
+      {!editMode && !showTrip && (
         <div className="search-float">
           <div className="search-bar">
             <button

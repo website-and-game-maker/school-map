@@ -161,7 +161,6 @@ export class MapLabels {
         // A coloured pin, the way a street map marks a park or a café.
         const cat = placeCategory(item.text);
         const ink = PLACE_INK[cat];
-        node.classList.add(`map-label-cat-${cat}`);
         const icon = document.createElement("span");
         icon.className = "map-label-icon map-label-pin";
         icon.style.background = ink;
@@ -203,9 +202,9 @@ export class MapLabels {
         const x = ((this.v.x + 1) / 2) * w;
         const y = ((1 - this.v.y) / 2) * h;
         this.hereNode.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+        // No collision box: the dot sits on the very room it names, and that
+        // room's label is the one name you most want to keep.
         hereShown = true;
-        // Names keep clear of the dot, the way a map app's own location does.
-        boxes.push(x - 12, y - 12, x + 12, y + 12);
       }
     }
     this.hereNode.style.visibility = hereShown ? "visible" : "hidden";
@@ -219,6 +218,8 @@ export class MapLabels {
         if (this.v.z > 1 || this.v.z < -1) show = false;
         x = ((this.v.x + 1) / 2) * w;
         y = ((1 - this.v.y) / 2) * h;
+        // The place you are at keeps its name, just under the blue dot.
+        if (hereShown && this.here && p.item.world.distanceToSquared(this.here.at) < 1) y += 9 + p.h / 2;
         // Whole labels only: half a name at the edge reads as a different name.
         if (x - p.w / 2 < 2 || x + p.w / 2 > w - 2 || y - p.h / 2 < 2 || y + p.h / 2 > h - 2) show = false;
       }

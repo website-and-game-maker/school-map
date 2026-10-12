@@ -251,15 +251,6 @@ button { font-family: inherit; }
 
 .quick-chip:hover { background: var(--paper); }
 
-/* A place's colour, shared with its fill on the map and its label. */
-.chip-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-.cat-sports { background: #34a853; }
-.cat-food { background: #f29900; }
-.cat-learning { background: #4285f4; }
-.cat-arts { background: #a142f4; }
-.cat-office { background: #80868b; }
-.cat-other { background: #34a853; }
-
 /* ---------------- route summary + steps ---------------- */
 
 .route-summary {
@@ -908,23 +899,6 @@ button { font-family: inherit; }
   font-weight: 500;
   color: #188038;
 }
-
-/* Named places take their category's colour, dot and text alike. */
-.map-label-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex: none;
-  box-shadow: 0 0 0 1.5px #fff;
-  background: currentColor;
-}
-
-.map-label-cat-sports { color: #188038; }
-.map-label-cat-food { color: #c26401; }
-.map-label-cat-learning { color: #1967d2; }
-.map-label-cat-arts { color: #8430ce; }
-.map-label-cat-office { color: #5f6368; }
-.map-label-cat-other { color: #188038; }
 
 .map-label-entrance { font-size: 11.5px; font-weight: 500; color: #3c4043; }
 
