@@ -9,6 +9,7 @@
 // refused, missing, or simply worse than reading the sign yourself.
 
 import { useEffect, useRef, useState } from "react";
+import type { Worker } from "tesseract.js";
 import type { SearchItem } from "../lib/search";
 import { resolvePlace } from "../lib/schedule";
 
@@ -40,6 +41,19 @@ export default function LocateDialog({ searchIndex, onFound, onClose }: Props) {
   );
   const [typed, setTyped] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  // One reader per dialog, made on the first tap and ended when it closes; a
+  // read that finishes after the dialog closed is dropped, not acted on.
+  const workerRef = useRef<Promise<Worker> | null>(null);
+  const openRef = useRef(true);
+  useEffect(() => {
+    openRef.current = true;
+    return () => {
+      openRef.current = false;
+      const w = workerRef.current;
+      workerRef.current = null;
+      void w?.then((x) => x.terminate()).catch(() => undefined);
+    };
+  }, []);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -81,11 +95,15 @@ export default function LocateDialog({ searchIndex, onFound, onClose }: Props) {
       .getContext("2d")
       ?.drawImage(video, (video.videoWidth - sw) / 2, (video.videoHeight - sh) / 2, sw, sh, 0, 0, sw, sh);
     try {
-      const { createWorker } = await import("tesseract.js");
-      const worker = await createWorker("eng");
-      await worker.setParameters({ tessedit_char_whitelist: "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ " });
+      workerRef.current ??= (async () => {
+        const { createWorker } = await import("tesseract.js");
+        const w = await createWorker("eng");
+        await w.setParameters({ tessedit_char_whitelist: "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ " });
+        return w;
+      })();
+      const worker = await workerRef.current;
       const { data } = await worker.recognize(canvas);
-      await worker.terminate();
+      if (!openRef.current) return;
       const hit = roomFromText(searchIndex, data.text);
       if (hit) {
         onFound(hit);
@@ -93,6 +111,11 @@ export default function LocateDialog({ searchIndex, onFound, onClose }: Props) {
       }
       setMessage("Couldn't read a room number. Get closer to the sign, or type it below.");
     } catch {
+      if (!openRef.current) return;
+      // A reader that failed to start is not reused: the next tap tries again.
+      const w = workerRef.current;
+      workerRef.current = null;
+      void w?.then((x) => x.terminate()).catch(() => undefined);
       setMessage("The sign reader didn't load. Type the room number below.");
     }
     setStatus("ready");

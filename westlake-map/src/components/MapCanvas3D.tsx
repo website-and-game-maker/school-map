@@ -46,6 +46,9 @@ export default function MapCanvas3D(props: Props) {
       },
     });
     viewerRef.current = viewer;
+    // A fresh viewer holds no pin, whatever the last one (before an edit
+    // session swapped it out) had told the app.
+    propsRef.current.onPinChange?.(false);
     return () => {
       viewerRef.current = null;
       viewer.dispose();

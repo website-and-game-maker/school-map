@@ -101,7 +101,7 @@ export interface Viewer3DProps {
    * Where the person is standing, once they have told the map (the camera
    * reader or "I'm next to…"). Drawn as a blue dot; the map flies to it.
    */
-  here?: { floor: FloorId; id: string } | null;
+  here?: { floor: FloorId; id: string; n?: number } | null;
   /** Bumped by the app to hand the floor back to the auto selector. */
   autoFloorToken?: number;
 }
@@ -159,8 +159,7 @@ interface FloorParts {
 // The plate is the map, and a map is read zoomed in: at 2048 a classroom wall
 // was a staircase of texels by the time room numbers appeared. A phone gets a
 // bit less, since one lost WebGL context costs more than slightly soft ink.
-const TEX_FOCUS =
-  typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? 3072 : 4096;
+const TEX_FOCUS = isCoarsePointer() ? 3072 : 4096;
 const TEX_GHOST = 1024;
 
 export class MapViewer3D {
@@ -221,7 +220,8 @@ export class MapViewer3D {
   /** Suppresses auto-focus while the camera is being moved by the app itself. */
   private cameraDriven = false;
 
-  private routeFramedAt = -Infinity;
+  /** The route is framed and nobody has touched the map since. */
+  private framedUntouched = false;
   private flight: RouteFlight | null = null;
   private flightState: FlightState = "idle";
   /** How the map was tilted and turned before the flight, to frame the whole
@@ -262,6 +262,7 @@ export class MapViewer3D {
     if (this.flight) this.endFlight(false);
     this.userMoved = true;
     this.gestureEnded = false;
+    this.framedUntouched = false;
   };
   private onGestureEnd = () => {
     this.gestureEnded = true;
@@ -726,6 +727,9 @@ export class MapViewer3D {
     const at = new THREE.Vector3(wx, wy, wz);
     this.labels.setHere(at, here.floor);
     if (fly) {
+      // You said where you are, so that floor holds until you move well away
+      // from here — not from wherever the map happened to be pointed.
+      if (this.props.activeFloor === here.floor) this.setPin(at.clone());
       const dist = clamp(Math.min(this.cameraDistance(), 320), CAMERA.minDistance, CAMERA.maxDistance);
       this.animateTo(at, dist, this.currentElevationDeg(), this.currentAzimuthDeg(), 600);
     }
@@ -1173,8 +1177,12 @@ export class MapViewer3D {
     if (prev.routeKey !== next.routeKey) {
       this.syncRoute();
       this.applyFloorStates();
-      this.frameRoute();
-      this.routeFramedAt = performance.now();
+      // Changing only From with no destination is not a route to frame; with
+      // none either side, frameRoute would snap back to the whole school.
+      if (prev.route || next.route) {
+        this.frameRoute();
+        this.framedUntouched = next.route !== null;
+      }
     }
 
     if (prev.obscuredBottom !== next.obscuredBottom || prev.obscuredLeft !== next.obscuredLeft) {
@@ -1182,11 +1190,11 @@ export class MapViewer3D {
       // The panel usually opens with the route that fills it, a frame or two
       // after the route was framed for an uncovered map. Frame it again for
       // the part that is still visible, or the route sits under the panel.
-      if (next.route && performance.now() - this.routeFramedAt < 1500 && !this.flight) this.frameRoute();
+      if (next.route && this.framedUntouched && !this.flight) this.frameRoute();
       this.invalidate();
     }
 
-    const hereKey = (h: Viewer3DProps["here"]) => (h ? `${h.floor}:${h.id}` : "");
+    const hereKey = (h: Viewer3DProps["here"]) => (h ? `${h.floor}:${h.id}#${h.n ?? 0}` : "");
     if (hereKey(prev.here) !== hereKey(next.here)) this.syncHere(true);
     else if (prev.floors !== next.floors || prev.placements !== next.placements) this.syncHere(false);
 
