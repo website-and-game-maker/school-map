@@ -35,6 +35,10 @@ interface Props {
   /** Keys of the current From/To, to mark the walk being shown. */
   activeFrom: string | null;
   activeTo: string | null;
+  /** Opened from the map's "My schedule" chip: skip the collapsed button. */
+  startOpen?: boolean;
+  /** Hide pressed: the app closes the panel the schedule lives in. */
+  onClose?: () => void;
 }
 
 export default function SchedulePanel({
@@ -44,24 +48,27 @@ export default function SchedulePanel({
   onShow,
   activeFrom,
   activeTo,
+  startOpen,
+  onClose,
 }: Props) {
   // Read once: storage cannot change under us mid-visit except from another
   // tab, and following that is not worth a storage listener.
-  const [schedule, setSchedule] = useState<Schedule | null>(() => loadSchedule());
+  const [schedule, setSchedule] = useState<Schedule | null>(
+    () => loadSchedule() ?? (startOpen ? emptySchedule(chapCourt(searchIndex)) : null)
+  );
   // Collapsed to one button until someone uses it; a returning student with a
   // saved schedule lands straight on their list of walks.
-  const [open, setOpen] = useState(schedule !== null);
-  const [editing, setEditing] = useState(schedule === null);
+  const [open, setOpen] = useState(schedule !== null || Boolean(startOpen));
+  const [editing, setEditing] = useState(
+    () => !schedule || !schedule.periods.some((p) => p.room.trim())
+  );
 
   useEffect(() => {
     if (schedule) saveSchedule(schedule);
   }, [schedule]);
 
   // The same default start the app itself uses: the Chap Court entrance.
-  const defaultArrive = useMemo(() => {
-    const c = searchIndex.find((i) => i.kind === "entrance" && i.label.startsWith("Chap Court"));
-    return c ? { label: c.label, key: c.key } : null;
-  }, [searchIndex]);
+  const defaultArrive = useMemo(() => chapCourt(searchIndex), [searchIndex]);
 
   function start() {
     // Reopening a schedule that was only hidden goes back to its walks; a
@@ -136,7 +143,14 @@ export default function SchedulePanel({
               Edit
             </button>
           )}
-          <button className="sched-link" onClick={() => setOpen(false)} aria-label="Hide schedule">
+          <button
+            className="sched-link"
+            onClick={() => {
+              setOpen(false);
+              onClose?.();
+            }}
+            aria-label="Hide schedule"
+          >
             Hide
           </button>
         </div>
@@ -312,4 +326,9 @@ function RoomField({
       )}
     </div>
   );
+}
+
+function chapCourt(searchIndex: SearchItem[]): Schedule["arriveFrom"] {
+  const c = searchIndex.find((i) => i.kind === "entrance" && i.label.startsWith("Chap Court"));
+  return c ? { label: c.label, key: c.key } : null;
 }

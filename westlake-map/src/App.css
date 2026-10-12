@@ -1431,3 +1431,358 @@ button { font-family: inherit; }
 }
 
 .review-row button:hover { border-color: var(--primary); color: var(--primary); }
+
+/* ======================================================================== */
+/* Map-app layout: the map is the whole screen, everything else floats.    */
+/* A search bar with one-tap chips under it, a card for directions (a       */
+/* bottom sheet on a phone), the floor picker and map buttons down the      */
+/* right edge. The panel only exists while it has something to show.       */
+/* ======================================================================== */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.app { position: relative; display: block; }
+
+.map-area { position: absolute; inset: 0; }
+
+.panel-shell {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 392px;
+  min-width: 0;
+  max-height: calc(100% - 24px);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 2px 6px rgba(60, 64, 67, 0.28), 0 6px 24px rgba(60, 64, 67, 0.16);
+  overflow: hidden;
+  z-index: 20;
+}
+
+.panel-shell.hidden { display: none; }
+
+/* With the search bar showing (schedule, about), the card sits under it. */
+.search-float + .panel-shell { top: 108px; max-height: calc(100% - 120px); }
+
+.panel-scroll { padding: 14px 16px 18px; gap: 14px; }
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: -4px;
+}
+
+.panel-title { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+
+.panel-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: #5f6368;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.panel-close:hover { background: #f1f3f4; }
+
+.edit-toggle { width: 100%; }
+
+/* ---------------- the search bar ---------------- */
+
+.search-float {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 21;
+  max-width: calc(100% - 100px);
+}
+
+.search-bar {
+  width: 392px;
+  max-width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 4px;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 2px 6px rgba(60, 64, 67, 0.3), 0 1px 2px rgba(60, 64, 67, 0.15);
+}
+
+.search-bar .field { flex: 1; gap: 0; }
+
+.search-bar .field input {
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  padding: 12px 6px;
+  border-radius: 0;
+}
+
+.search-bar .input-clear { right: 2px; }
+
+.search-bar .suggestions {
+  left: -48px;
+  right: -44px;
+  top: calc(100% + 8px);
+}
+
+.search-menu {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3.5px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.search-menu span { width: 17px; height: 2px; border-radius: 1px; background: #5f6368; }
+.search-menu:hover { background: #f1f3f4; }
+
+.search-brand {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 14px;
+}
+
+.chip-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: calc(100vw - 120px);
+  padding: 2px 2px 4px;
+}
+
+.chip-row::-webkit-scrollbar { display: none; }
+
+.map-chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px 0 6px;
+  border: none;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.3);
+  color: #3c4043;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.map-chip:hover { background: #f8f9fa; }
+.map-chip.on { background: var(--accent-soft); color: var(--primary); }
+
+.map-chip-icon {
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+/* ---------------- floor picker, Google-style ---------------- */
+
+.floor-stack {
+  top: 12px;
+  right: 12px;
+  padding: 4px;
+  gap: 2px;
+  border: none;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(60, 64, 67, 0.3);
+}
+
+.floor-auto {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1e7b3c;
+  text-align: center;
+  padding: 3px 0 2px;
+}
+
+.floor-chip { text-align: center; padding: 8px 12px; border-radius: 7px; color: #3c4043; }
+.floor-chip:hover { background: #f1f3f4; }
+.floor-chip.active { background: var(--accent-soft); color: var(--primary); }
+.floor-chip.active .route-dot { background: var(--accent); }
+
+.map-controls { top: 170px; right: 12px; }
+
+.map-ctl,
+.map-ctl-zoom {
+  border: none;
+  box-shadow: 0 2px 6px rgba(60, 64, 67, 0.3);
+}
+
+.map-ctl { color: #5f6368; }
+.map-ctl-zoom .map-ctl:first-child { border-bottom: 1px solid #eceff1; }
+
+.map-tools { top: auto; bottom: 22px; left: 12px; }
+
+/* ---------------- labels: street-map type ---------------- */
+
+.map-label { color: #5f6368; font-size: 11px; }
+.map-label-landmark { font-size: 12.5px; font-weight: 600; }
+.map-label-pin {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.map-label-pin svg { width: 14px; height: 14px; color: #fff; }
+
+/* ---------------- phone ---------------- */
+
+@media (max-width: 760px) {
+  .search-float { top: 10px; left: 10px; right: 10px; max-width: none; }
+  .search-bar { width: 100%; }
+  .chip-row { max-width: none; margin-right: -10px; }
+  .search-bar .suggestions { left: -48px; right: -40px; }
+
+  .panel-shell {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 50dvh;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .search-float + .panel-shell { top: auto; max-height: 50dvh; }
+
+  /* Under the search bar and chips, which take the top of the screen. */
+  .floor-stack { top: 112px; right: 10px; }
+  .map-controls { top: 268px; right: 10px; }
+  .app.has-panel .map-tools { display: none; }
+}
+
+/* ---- "Where am I?" -------------------------------------------------- */
+
+.map-here {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: #1a73e8;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 7px rgba(26, 115, 232, 0.2), 0 1px 4px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 2;
+  will-change: transform;
+}
+
+.floor-auto.off {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #80868b;
+  text-decoration: line-through;
+  cursor: pointer;
+  padding: 0;
+}
+.floor-auto.off:hover {
+  color: #1e7b3c;
+  text-decoration: none;
+}
+
+.map-chip-icon svg {
+  display: block;
+}
+
+.locate-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(32, 33, 36, 0.4);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.locate-card {
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  padding: 14px 16px 16px;
+  display: grid;
+  gap: 10px;
+}
+.locate-video {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #202124;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.locate-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.locate-guide {
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  top: 30%;
+  bottom: 30%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.25);
+}
+.locate-read {
+  width: 100%;
+  justify-content: center;
+}
+.locate-type {
+  display: flex;
+  gap: 8px;
+}
+.locate-type input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid #dadce0;
+  border-radius: 20px;
+  padding: 0 14px;
+  font: inherit;
+}

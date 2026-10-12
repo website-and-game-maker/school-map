@@ -32,6 +32,7 @@ export default function MapCanvas3D(props: Props) {
     if (!host) return;
     const viewer = new MapViewer3D(host, propsRef.current, {
       onPickFloor: (f) => propsRef.current.onPickFloor?.(f),
+      onPinChange: (p) => propsRef.current.onPinChange?.(p),
       onFocusFloor: (f) => propsRef.current.onFocusFloor?.(f),
       onPickPlace: (item) => propsRef.current.onPickPlace?.(item),
       onViewChange: (s) => {

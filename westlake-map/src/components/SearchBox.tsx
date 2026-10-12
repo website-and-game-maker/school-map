@@ -23,6 +23,8 @@ interface Props {
   onPick: (item: SearchItem) => void;
   onClear: () => void;
   autoFocus?: boolean;
+  /** Keep the label for screen readers only, as in the map's search bar. */
+  hideLabel?: boolean;
 }
 
 export default function SearchBox({
@@ -35,6 +37,7 @@ export default function SearchBox({
   onPick,
   onClear,
   autoFocus,
+  hideLabel,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -76,7 +79,9 @@ export default function SearchBox({
 
   return (
     <div className="field">
-      <label htmlFor={inputId}>{label}</label>
+      <label htmlFor={inputId} className={hideLabel ? "sr-only" : undefined}>
+        {label}
+      </label>
       <div className="input-wrap">
         <input
           id={inputId}

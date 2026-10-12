@@ -7,13 +7,15 @@ import MapCanvas, { type EditTool } from "./components/MapCanvas";
 const MapCanvas3D = lazy(() => import("./components/MapCanvas3D"));
 import SearchBox from "./components/SearchBox";
 import EditorKeyDialog from "./components/EditorKeyDialog";
+import LocateDialog from "./components/LocateDialog";
+import { ICON_PATHS } from "./three/icons";
 import FeedbackPanel from "./components/FeedbackPanel";
 import SchedulePanel from "./components/SchedulePanel";
 import { FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
 import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
 import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
-import { buildSearchIndex, searchItems, type SearchItem } from "./lib/search";
-import { placeCategory } from "./lib/placeCategory";
+import { buildSearchIndex, searchItems, NEAREST_RESTROOM, type SearchItem } from "./lib/search";
+import { PLACE_INK, placeCategory, type PlaceCategory } from "./lib/placeCategory";
 import { linksFromMarks, stairMarks } from "./lib/stairsFromMarks";
 import { downloadJson, saveFloorToDisk } from "./lib/save";
 import { EDITING_CONFIGURED, forgetEditor, resolveEditAccess } from "./lib/access";
@@ -67,6 +69,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
   const [sheetOpen, setSheetOpen] = useState(true);
+  /** What the menu or a chip opened in the panel, when there is no route. */
+  const [sheet, setSheet] = useState<"none" | "schedule" | "about">("none");
   const [activeStep, setActiveStep] = useState<number | null>(null);
 
   useEffect(() => {
@@ -94,12 +98,14 @@ export default function App() {
     const area = mapAreaRef.current;
     const panel = panelShellRef.current;
     const phone = matchMedia(PHONE_QUERY).matches;
+    // A hidden panel (no route, nothing opened) covers nothing.
+    const shown = Boolean(panel && panel.offsetParent !== null);
     const px =
-      area && panel && phone
+      area && panel && shown && phone
         ? Math.max(0, Math.round(area.getBoundingClientRect().bottom - panel.getBoundingClientRect().top))
         : 0;
     const left =
-      area && panel && !phone
+      area && panel && shown && !phone
         ? Math.max(0, Math.round(panel.getBoundingClientRect().right - area.getBoundingClientRect().left))
         : 0;
     setObscuredBottomPx(px); // same value bails out, so no re-render
@@ -301,6 +307,20 @@ export default function App() {
   // the floor control — a map that changes floor without a word looks like it
   // glitched.
   const [floorNote, setFloorNote] = useState<string | null>(null);
+  // Held by hand (a chip, a located room): auto waits until the map moves away.
+  const [floorPinned, setFloorPinned] = useState(false);
+  const [autoFloorToken, setAutoFloorToken] = useState(0);
+  // "Where am I?": the room sign you read or typed, drawn as a blue dot.
+  const [here, setHere] = useState<SearchItem | null>(null);
+  const [locateOpen, setLocateOpen] = useState(false);
+  function located(item: SearchItem) {
+    setLocateOpen(false);
+    setHere(item);
+    // Where you are is where you start from.
+    setFromItem(item);
+    setFromQuery(item.label);
+    switchFloor(item.floor);
+  }
   const floorNoteTimer = useRef(0);
   function autoSwitchFloor(f: FloorId) {
     switchFloor(f);
@@ -534,19 +554,59 @@ export default function App() {
   const destLabel = toItem ? toItem.label : "";
   const routeMissing = Boolean(fromItem && toItem && !routeResult);
 
+
+  // What the floating panel is showing, if anything. Directions win whenever
+  // there is a destination; otherwise it is whatever the menu or a chip opened.
+  const panelMode: "none" | "directions" | "schedule" | "about" | "edit" = editMode
+    ? "edit"
+    : toItem
+      ? "directions"
+      : sheet;
+  const panelTitle =
+    panelMode === "directions"
+      ? "Directions"
+      : panelMode === "schedule"
+        ? "My schedule"
+        : panelMode === "about"
+          ? "Westlake Map"
+          : panelMode === "edit"
+            ? "Edit the map"
+            : "";
+
+  // The sheet appearing or going away moves the map's visible strip.
+  useEffect(() => {
+    const raf = requestAnimationFrame(measureObscured);
+    return () => cancelAnimationFrame(raf);
+  }, [panelMode, measureObscured]);
+
+  function closePanel() {
+    if (panelMode === "edit") toggleEditMode();
+    else if (panelMode === "directions") clearRoute();
+    else setSheet("none");
+  }
+
+  /** The chips under the search bar: one tap to a destination, like a map's "Restaurants". */
+  const chips = useMemo(() => {
+    const find = (label: string) => searchIndex.find((i) => i.label === label) ?? null;
+    const out: { label: string; item: SearchItem | null; cat: PlaceCategory }[] = [];
+    if (restroomCount > 0) out.push({ label: "Restrooms", item: NEAREST_RESTROOM, cat: "office" });
+    for (const name of ["Library", "Cafeteria", "Commons", "Auditorium", "Fieldhouse Gym"]) {
+      const item = find(name);
+      if (item) out.push({ label: name, item, cat: placeCategory(name) });
+    }
+    return out;
+  }, [searchIndex, restroomCount]);
+
   const panel = (
     <>
-      <div className="brand">
-        <span className="brand-mark">W</span>
-        <div>
-          <h1>Westlake Map</h1>
-          <p className="subtitle">Find your way. Home of the Chaps.</p>
-        </div>
+      <div className="panel-head">
+        <h2 className="panel-title">{panelTitle}</h2>
+        <button className="panel-close" onClick={closePanel} aria-label="Close">
+          ×
+        </button>
       </div>
 
-
-
-      {!editMode && (
+      {panelMode === "directions" && (
         <>
           <div className="trip">
             <SearchBox
@@ -594,29 +654,6 @@ export default function App() {
               onClear={clearRoute}
             />
           </div>
-
-          {!toItem && (
-            <div className="quick-row">
-              <span className="quick-label">Popular</span>
-              {["Library", "Cafeteria", "Commons", "Auditorium"].map((name) => {
-                const item = searchIndex.find((i) => i.label === name);
-                if (!item) return null;
-                return (
-                  <button
-                    key={name}
-                    className="quick-chip"
-                    onClick={() => {
-                      setToItem(item);
-                      setToQuery(item.label);
-                    }}
-                  >
-                    <span className={`chip-dot cat-${placeCategory(name)}`} aria-hidden="true" />
-                    {name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
 
           {routeMissing && (
             <p className="notice">
@@ -677,33 +714,89 @@ export default function App() {
               </button>
             </div>
           )}
-
-          <SchedulePanel
-            searchIndex={searchIndex}
-            floorLabel={floorTagFor}
-            routeBetween={routeBetween}
-            activeFrom={fromItem?.key ?? null}
-            activeTo={toItem?.key ?? null}
-            onShow={(a, b) => {
-              setFromItem(a);
-              setFromQuery(a.label);
-              setToItem(b);
-              setToQuery(b.label);
-            }}
-          />
         </>
       )}
 
-
-      {canEdit && (
-        <div className="field edit-toggle-row">
-          <button className={`edit-toggle${editMode ? " on" : ""}`} onClick={toggleEditMode}>
-            {editMode ? "Done editing" : "✎ Edit this floor"}
-          </button>
-        </div>
+      {panelMode === "schedule" && (
+        <SchedulePanel
+          searchIndex={searchIndex}
+          floorLabel={floorTagFor}
+          routeBetween={routeBetween}
+          activeFrom={fromItem?.key ?? null}
+          activeTo={toItem?.key ?? null}
+          startOpen
+          onClose={() => setSheet("none")}
+          onShow={(a, b) => {
+            setFromItem(a);
+            setFromQuery(a.label);
+            setToItem(b);
+            setToQuery(b.label);
+          }}
+        />
       )}
 
-      {editMode && (
+      {panelMode === "about" && (
+        <>
+        <div className="roadmap">
+          <p className="roadmap-title">What this map knows</p>
+
+          {/* Three rows, each one a claim about accuracy with a status you can
+              read at a glance. The previous version was a bulleted paragraph,
+              which buried the useful part: WHICH bits are solid and which are
+              guesses. */}
+          <ul className="status-list">
+            <li className="status-row good">
+              <span className="status-dot" aria-hidden="true" />
+              <div>
+                <strong>Room positions</strong>
+                <span>
+                  Read off the official plan by machine, number and all. The rest were traced by
+                  eye and are tagged as such in the data.
+                </span>
+              </div>
+            </li>
+            <li className="status-row warn">
+              <span className="status-dot" aria-hidden="true" />
+              <div>
+                <strong>How the floors line up</strong>
+                <span>
+                  Fitted from a handful of shared entrances, so it is out by 10–51&nbsp;ft. Tilt the
+                  view and watch the stairwell columns: one that leans is a floor that needs
+                  nudging.
+                </span>
+              </div>
+            </li>
+            <li className="status-row missing">
+              <span className="status-dot" aria-hidden="true" />
+              <div>
+                <strong>Stairs, lifts and restrooms</strong>
+                <span>
+                  Not drawn on the plan at all, so cross-floor routes are approximate. They get
+                  marked by hand.
+                </span>
+              </div>
+            </li>
+          </ul>
+
+          <p className="roadmap-title">Coming later</p>
+          <ul className="chip-list">
+            <li>Teacher search</li>
+            <li>Photo walkthroughs</li>
+          </ul>
+
+          <p className="disclaimer">
+            Distances and times are estimates from a single scale constant.
+          </p>
+        </div>
+          {canEdit && (
+            <button className="edit-toggle" onClick={toggleEditMode}>
+              ✎ Edit this floor
+            </button>
+          )}
+        </>
+      )}
+
+      {panelMode === "edit" && (
         <div className="edit-panel">
           <p className="hint">
             Editing <strong>{FLOOR_LABELS[floorId]}</strong>. Routes follow the walls traced from the
@@ -886,68 +979,11 @@ export default function App() {
           />
         </div>
       )}
-
-      {!editMode && (
-        // Folded away: a map's panel is for getting somewhere. How accurate
-        // the data is matters, but only to the person who goes looking.
-        <details className="roadmap">
-          <summary className="roadmap-summary">About this map</summary>
-          <p className="roadmap-title">What this map knows</p>
-
-          {/* Three rows, each one a claim about accuracy with a status you can
-              read at a glance. The previous version was a bulleted paragraph,
-              which buried the useful part: WHICH bits are solid and which are
-              guesses. */}
-          <ul className="status-list">
-            <li className="status-row good">
-              <span className="status-dot" aria-hidden="true" />
-              <div>
-                <strong>Room positions</strong>
-                <span>
-                  Read off the official plan by machine, number and all. The rest were traced by
-                  eye and are tagged as such in the data.
-                </span>
-              </div>
-            </li>
-            <li className="status-row warn">
-              <span className="status-dot" aria-hidden="true" />
-              <div>
-                <strong>How the floors line up</strong>
-                <span>
-                  Fitted from a handful of shared entrances, so it is out by 10–51&nbsp;ft. Tilt the
-                  view and watch the stairwell columns: one that leans is a floor that needs
-                  nudging.
-                </span>
-              </div>
-            </li>
-            <li className="status-row missing">
-              <span className="status-dot" aria-hidden="true" />
-              <div>
-                <strong>Stairs, lifts and restrooms</strong>
-                <span>
-                  Not drawn on the plan at all, so cross-floor routes are approximate. They get
-                  marked by hand.
-                </span>
-              </div>
-            </li>
-          </ul>
-
-          <p className="roadmap-title">Coming later</p>
-          <ul className="chip-list">
-            <li>Teacher search</li>
-            <li>Photo walkthroughs</li>
-          </ul>
-
-          <p className="disclaimer">
-            Distances and times are estimates from a single scale constant.
-          </p>
-        </details>
-      )}
     </>
   );
 
   return (
-    <div className={`app${editMode ? " editing" : ""}`}>
+    <div className={`app${editMode ? " editing" : ""}${panelMode !== "none" ? " has-panel" : ""}`}>
       <main className={`map-area${view === "3d" ? " map-area-3d" : ""}`} ref={mapAreaRef}>
         {view === "2d" ? (
         <TransformWrapper
@@ -1014,6 +1050,9 @@ export default function App() {
             // becomes the one you are reading.
             onFocusFloor={autoSwitchFloor}
             onPickPlace={pickPlace}
+            here={here ? { floor: here.floor, id: here.id } : null}
+            autoFloorToken={autoFloorToken}
+            onPinChange={setFloorPinned}
             // On a phone the sheet covers half the map; a flight wants all of it.
             onFlightChange={(state) => {
               if (state === "flying") setSheetOpen(false);
@@ -1021,6 +1060,43 @@ export default function App() {
           />
           </Suspense>
         )}
+
+        {/* The floor picks itself — from the route you asked for, and from the
+            part of the school you pan and zoom onto. This is the readout for
+            that, stacked in the order the floors actually are, and you can
+            still override it. */}
+        <div className="floor-stack" role="group" aria-label="Floor">
+          {floorPinned ? (
+            <button
+              className="floor-auto off"
+              onClick={() => setAutoFloorToken((t) => t + 1)}
+              title="Let the floor follow where you look again"
+            >
+              Auto
+            </button>
+          ) : (
+            <span className="floor-auto" title="The floor follows where you look on the map">
+              Auto
+            </span>
+          )}
+          {[...FLOOR_ORDER].reverse().map((f) => (
+            <button
+              key={f}
+              className={`floor-chip${floorId === f ? " active" : ""}`}
+              onClick={() => switchFloor(f)}
+              aria-pressed={floorId === f}
+              title={FLOOR_LABELS[f]}
+            >
+              {FLOOR_LABELS[f].replace(" Level", "")}
+              {segments.some((s) => s.floor === f) && <span className="route-dot" />}
+            </button>
+          ))}
+          {floorNote && !editMode && (
+            <span className="floor-note" role="status">
+              {floorNote}
+            </span>
+          )}
+        </div>
 
         {EDITING_CONFIGURED && (
           <div className="map-tools">
@@ -1035,46 +1111,100 @@ export default function App() {
             />
           </div>
         )}
-
-        {/* The floor picks itself — from the route you asked for, and from the
-            part of the school you pan and zoom onto. This is the readout for
-            that, stacked in the order the floors actually are, and you can
-            still override it. */}
-        <div className="floor-stack" role="group" aria-label="Floor">
-          {[...FLOOR_ORDER].reverse().map((f) => (
-            <button
-              key={f}
-              className={`floor-chip${floorId === f ? " active" : ""}`}
-              onClick={() => switchFloor(f)}
-              aria-pressed={floorId === f}
-            >
-              {FLOOR_LABELS[f].replace(" Level", "")}
-              {segments.some((s) => s.floor === f) && <span className="route-dot" />}
-            </button>
-          ))}
-          {floorNote && !editMode && (
-            <span className="floor-note" role="status">
-              {floorNote}
-            </span>
-          )}
-        </div>
-
-        {destLabel && !editMode && <div className="map-badge">→ {destLabel}</div>}
-
-        {/* Dragging moves the map, as on any map. Tilting and turning are the
-            gestures nobody guesses, so they are the ones said out loud. */}
-        {view === "3d" && (
-          <div className="pan-hint">
-            {matchMedia("(pointer: coarse)").matches
-              ? "Pinch to zoom · twist with two fingers to turn"
-              : "Drag to move · scroll to zoom · right-drag to tilt"}
-          </div>
-        )}
       </main>
 
-      {/* One panel: a sidebar on a laptop, a bottom sheet over the map on a
-          phone. Same markup either way, so there's only ever one search box. */}
-      <aside className={`panel-shell${sheetOpen ? " open" : ""}`} ref={panelShellRef}>
+      {/* The search bar floats over the map, as on any map app, with a row of
+          one-tap destinations under it. It gives way to the directions card
+          once a destination is picked. */}
+      {!editMode && !toItem && (
+        <div className="search-float">
+          <div className="search-bar">
+            <button
+              className="search-menu"
+              onClick={() => setSheet((s) => (s === "about" ? "none" : "about"))}
+              aria-label="About this map"
+              aria-expanded={sheet === "about"}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+            <SearchBox
+              label="Search the school"
+              hideLabel
+              placeholder="Search Westlake High"
+              value={toQuery}
+              results={toResults}
+              floorLabel={floorTagFor}
+              onQueryChange={(q) => {
+                setToQuery(q);
+                setToItem(null);
+              }}
+              onPick={(item) => {
+                setToItem(item);
+                setToQuery(item.label);
+                setSheetOpen(true);
+              }}
+              onClear={clearRoute}
+            />
+            <span className="brand-mark search-brand" aria-hidden="true">
+              W
+            </span>
+          </div>
+          <div className="chip-row" role="list">
+            <button
+              className={`map-chip${sheet === "schedule" ? " on" : ""}`}
+              onClick={() => setSheet((s) => (s === "schedule" ? "none" : "schedule"))}
+            >
+              <span className="map-chip-icon" style={{ background: "var(--brand)" }} aria-hidden="true">
+                ⏱
+              </span>
+              My schedule
+            </button>
+            <button className="map-chip" onClick={() => setLocateOpen(true)}>
+              <span className="map-chip-icon" style={{ background: "#1a73e8" }} aria-hidden="true">
+                ◎
+              </span>
+              Where am I?
+            </button>
+            {chips.map((c) => (
+              <button
+                key={c.label}
+                className="map-chip"
+                onClick={() => {
+                  if (!c.item) return;
+                  setToItem(c.item);
+                  setToQuery(c.item.label);
+                  setSheetOpen(true);
+                }}
+              >
+                <span
+                  className="map-chip-icon"
+                  style={{ background: PLACE_INK[c.cat] }}
+                  aria-hidden="true"
+                >
+                  {c.label === "Restrooms" ? "WC" : <ChipIcon cat={c.cat} />}
+                </span>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {locateOpen && (
+        <LocateDialog searchIndex={searchIndex} onFound={located} onClose={() => setLocateOpen(false)} />
+      )}
+
+      {/* One panel: a floating card on a laptop, a bottom sheet on a phone.
+          Only there when it has something to show, so the map gets the
+          whole screen the rest of the time. */}
+      <aside
+        className={`panel-shell${sheetOpen ? " open" : ""}${panelMode === "none" ? " hidden" : ""}${
+          panelMode === "directions" ? " directions" : ""
+        }`}
+        ref={panelShellRef}
+      >
         <button
           className="sheet-handle"
           onClick={() => setSheetOpen((v) => !v)}
@@ -1082,11 +1212,20 @@ export default function App() {
         >
           <span className="grabber" />
           <span className="sheet-peek">
-            {directions ? `≈ ${directions.minutes} min · ${destLabel}` : "Search for a room or place"}
+            {directions ? `≈ ${directions.minutes} min · ${destLabel}` : panelTitle}
           </span>
         </button>
         <div className="panel-scroll">{panel}</div>
       </aside>
     </div>
+  );
+}
+
+/** The same white glyph the map's own place pins carry. */
+function ChipIcon({ cat }: { cat: PlaceCategory }) {
+  return (
+    <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+      <path d={ICON_PATHS[cat]} fill="currentColor" />
+    </svg>
   );
 }

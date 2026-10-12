@@ -153,6 +153,17 @@ it before changing the extraction.
   other way round. The "© OpenStreetMap contributors" credit in the corner is
   required by OSM's licence; keep it.
 
+- **The chrome is a phone map app's.** A floating search pill with a row of
+  chips under it (My schedule, Where am I?, and one-tap destinations), one
+  floating card for whatever is open (directions, schedule, menu, edit) that
+  becomes a bottom sheet on a phone, and named places drawn as coloured pins
+  by category (`src/lib/placeCategory.ts`, glyphs in `src/three/icons.ts`) on
+  a plate that tints those rooms to match. "Where am I?"
+  (`components/LocateDialog.tsx`) reads a door sign's room number with the
+  camera (tesseract.js, lazy-loaded) or takes it typed, drops a blue dot, sets
+  From, and pins that floor. A pinned floor shows "Auto" struck through;
+  tapping it hands the floor back to `autoFloor.ts`.
+
 - **The hand-drawn tour map** (`src/assets/tour-map*.jpg`, shown in the app) is a
   student's sketch, not a survey. It is a reference layer, never a data source
   for geometry — but it did independently confirm that all 203 numbered rooms sit
