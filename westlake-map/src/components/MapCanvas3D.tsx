@@ -103,7 +103,10 @@ export default function MapCanvas3D(props: Props) {
           className="fly-controls"
           role="group"
           aria-label="Fly the route"
-          style={{ bottom: `${Math.round(props.obscuredBottom) + 16}px` }}
+          style={{
+            bottom: `${Math.round(props.obscuredBottom) + 16}px`,
+            left: `${Math.round(props.obscuredLeft ?? 0) + 16}px`,
+          }}
         >
           {flight === "idle" ? (
             <button className="fly-btn primary" onClick={() => v()?.startFlight()}>

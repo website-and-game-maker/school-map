@@ -11,6 +11,7 @@
 // the same canvas into the map pane, so the two can never drift apart.
 
 import type { FloorId } from "../types";
+import { placeCategory, type PlaceCategory } from "./placeCategory";
 
 import roomsLower from "../data/floors/rooms-lower.json";
 import roomsMain from "../data/floors/rooms-main.json";
@@ -73,21 +74,33 @@ export function roomsOf(floor: FloorId): RoomsFile {
 }
 
 /**
- * The palette. A street map's, not an architect's: pale rooms on white
- * circulation, walls a quiet warm grey rather than black ink, and the named
- * spaces (gyms, the library, the fields) tinted so they read as places before
- * any label does. `paper` matches --map-ground in App.css, which is also the
- * 3D view's clear colour, so the building sits on the same ground in both.
+ * The palette, taken from how phone maps draw the inside of a building: a
+ * near-white floor, rooms a shade greyer with a hairline between them, walls
+ * a light grey line rather than ink, and named spaces filled by what they are
+ * (green for sport, orange for food, blue for study, purple for the arts) so
+ * they read as places before any label does. `paper` matches --map-ground in
+ * App.css, which is also the 3D view's clear colour.
  */
 export const INK = {
-  paper: "#eceae6",
+  paper: "#e8eaed",
   corridor: "#ffffff",
-  room: "#f6f3ee",
-  landmark: "#e2efe3",
-  outline: "#dcd5ca",
-  wall: "#aaa398",
-  label: "#4d4a46",
+  room: "#ebedf0",
+  outline: "#d2d6db",
+  wall: "#a9afb6",
+  /** The building's outer edge, so it stands off the ground. */
+  footprint: "#b9bec5",
+  label: "#5f6368",
 } as const;
+
+/** Fill for a named space, by what kind of place it is. */
+export const PLACE_FILL: Record<PlaceCategory, string> = {
+  sports: "#d4ecd9",
+  food: "#fde9cf",
+  learning: "#dfe9fb",
+  arts: "#ece2fa",
+  office: "#eceff1",
+  other: "#e3f1e6",
+};
 
 export interface FloorPlanOptions {
   /** Canvas pixels per plan pixel. */
@@ -130,9 +143,13 @@ export function renderFloorPlan(floor: FloorId, opts: FloorPlanOptions): HTMLCan
   // neither a recognised room nor a traced corridor shows the page colour
   // through, and the map reads as though it has holes punched in it.
   ctx.fillStyle = INK.corridor;
+  ctx.strokeStyle = INK.footprint;
+  ctx.lineWidth = Math.max(2, 3 / scale);
+  ctx.lineJoin = "round";
   for (const part of walls.footprint) {
     if (part.outer.length >= 6) {
       path(part.outer);
+      ctx.stroke();
       ctx.fill();
     }
   }
@@ -151,7 +168,7 @@ export function renderFloorPlan(floor: FloorId, opts: FloorPlanOptions): HTMLCan
   for (const r of data.rooms) {
     if (r.poly.length < 6) continue;
     path(r.poly);
-    ctx.fillStyle = r.kind === "landmark" ? INK.landmark : INK.room;
+    ctx.fillStyle = r.kind === "landmark" ? PLACE_FILL[placeCategory(r.label)] : INK.room;
     ctx.fill();
     ctx.stroke();
   }

@@ -90,6 +90,12 @@ export interface Viewer3DProps {
    * A change on its own re-centres but does not reframe.
    */
   obscuredBottom: number;
+  /**
+   * CSS px of the canvas's left edge covered by the floating search panel on
+   * a laptop. Same treatment as `obscuredBottom`, sideways: the projection
+   * centre moves to the middle of what is left, and framing fits that.
+   */
+  obscuredLeft?: number;
 }
 
 export interface MapViewState {
@@ -880,7 +886,7 @@ export class MapViewer3D {
     const h = Math.max(1, this.host.clientHeight);
     const halfFov = Math.tan((CAMERA.fov * Math.PI) / 360);
     const fitH = (size.z * 0.5 + 90) / halfFov / this.visibleFraction();
-    const fitW = (size.x * 0.5 + 90) / halfFov / (w / h);
+    const fitW = (size.x * 0.5 + 90) / halfFov / ((w / h) * this.visibleWidthFraction(w));
     const dist = clamp(Math.max(fitH, fitW), CAMERA.minDistance * 3, CAMERA.maxDistance);
     this.animateTo(centre, dist, el, az, ms);
   }
@@ -917,7 +923,7 @@ export class MapViewer3D {
     const halfFov = Math.tan((CAMERA.fov * Math.PI) / 360);
     const fit = Math.max(
       (size.z * 0.5 * 1.02) / halfFov / this.visibleFraction(),
-      (size.x * 0.5 * 1.02) / halfFov / (w / h)
+      (size.x * 0.5 * 1.02) / halfFov / ((w / h) * this.visibleWidthFraction(w))
     );
     const dist = clamp(fit, CAMERA.minDistance, CAMERA.maxDistance);
     this.placeCamera(c, dist, MAP_ELEVATION_DEG, 0);
@@ -933,6 +939,13 @@ export class MapViewer3D {
     // Keep at least a quarter of the canvas: past that the strip is too thin to frame into.
     const obscured = Math.min(Math.max(0, Number.isFinite(raw) ? raw : 0), h * 0.75);
     return (h - obscured) / h;
+  }
+
+  /** The share of the canvas width left visible beside the panel, in [0.4, 1]. */
+  private visibleWidthFraction(w = Math.max(1, this.host.clientWidth)): number {
+    const raw = this.props.obscuredLeft ?? 0;
+    const obscured = Math.min(Math.max(0, Number.isFinite(raw) ? raw : 0), w * 0.6);
+    return (w - obscured) / w;
   }
 
   /**
@@ -951,14 +964,15 @@ export class MapViewer3D {
     h = Math.max(1, this.host.clientHeight)
   ): void {
     const obscured = h * (1 - this.visibleFraction(h));
-    if (obscured < 1) {
+    const left = w * (1 - this.visibleWidthFraction(w));
+    if (obscured < 1 && left < 1) {
       // clearViewOffset() leaves `aspect` as the last offset set it; restore it
       // first so its own updateProjectionMatrix() uses the real one.
       this.camera.aspect = w / h;
       this.camera.clearViewOffset();
     } else {
       // setViewOffset sets aspect = w / h and updates the projection itself.
-      this.camera.setViewOffset(w, h, 0, obscured / 2, w, h);
+      this.camera.setViewOffset(w, h, -left / 2, obscured / 2, w, h);
     }
   }
 
@@ -1095,7 +1109,7 @@ export class MapViewer3D {
       this.frameRoute();
     }
 
-    if (prev.obscuredBottom !== next.obscuredBottom) {
+    if (prev.obscuredBottom !== next.obscuredBottom || prev.obscuredLeft !== next.obscuredLeft) {
       this.applyViewOffset();
       this.invalidate();
     }
