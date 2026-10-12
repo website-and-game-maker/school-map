@@ -30,6 +30,7 @@ python3 tools/export_walls.py              # walls-*.json — the 3D wall geomet
 python3 tools/export_rooms.py              # rooms-*.json — room/corridor outlines
 python3 tools/export_nav.py                # nav-*.json   — the walkable grid
 python3 tools/seed_align.py                # align3d.json — storey placement in 3D
+python3 tools/export_outdoor.py            # outdoor.json — streets/fields around it (needs pyarrow, shapely)
 ```
 
 Run them in that order: each one downstream reads the room points the one before
@@ -138,6 +139,19 @@ it before changing the extraction.
   away. Zoomed out to the whole school it never switches. The chips are a
   readout you can override, not the main way in; a pill says which floor it
   switched to.
+
+- **The world outside is real OpenStreetMap data** (`src/data/outdoor.json`,
+  drawn by `src/three/outdoor.ts` just under the slab of whichever floor is
+  showing). `tools/export_outdoor.py` pulls it from Overture Maps' public S3
+  copy of OSM (the OSM APIs and tile servers are not reachable from the build
+  sandbox; S3 is) and places it by registering main + upper's footprint against
+  OSM's outline of the building: rotation 6.5°, scale 0.90, IoU 0.78, stored in
+  the file's `geo` block, `verified: false`. Two things it measured and did not
+  act on: plan "up" is 6.5° clockwise of true north (the compass assumes it is
+  north), and the plan is ~11% larger than OSM's outline, which would put
+  `PX_PER_FOOT` nearer 2.9. The outdoor layer is scaled to the plan, not the
+  other way round. The "© OpenStreetMap contributors" credit in the corner is
+  required by OSM's licence; keep it.
 
 - **The hand-drawn tour map** (`src/assets/tour-map*.jpg`, shown in the app) is a
   student's sketch, not a survey. It is a reference layer, never a data source

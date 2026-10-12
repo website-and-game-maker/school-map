@@ -24,7 +24,7 @@ import type { PlacementSet } from "./placement";
 import { planToWorld } from "./placement";
 import { storeyY } from "./units";
 
-export type LabelKind = "landmark" | "entrance" | "room" | "restroom" | "stairs";
+export type LabelKind = "landmark" | "entrance" | "room" | "restroom" | "stairs" | "street" | "ground";
 
 export interface MapLabelItem {
   key: string;
@@ -43,6 +43,10 @@ const PRIORITY: Record<LabelKind, number> = {
   restroom: 2,
   stairs: 3,
   room: 4,
+  // The world outside (outdoor.ts): fields first, then streets. They lose
+  // every collision with the school's own names, which is the point.
+  ground: 5,
+  street: 6,
 };
 
 /**
@@ -217,7 +221,8 @@ export class MapLabels {
     let best: MapLabelItem | null = null;
     let bestD = Infinity;
     for (const p of this.placed) {
-      if (!p.at) continue;
+      // Streets and fields are context, not places the app can route to.
+      if (!p.at || p.item.kind === "street" || p.item.kind === "ground") continue;
       const dx = Math.max(0, Math.abs(x - p.at[0]) - p.w / 2);
       const dy = Math.max(0, Math.abs(y - p.at[1]) - p.h / 2);
       const d = Math.hypot(dx, dy);
