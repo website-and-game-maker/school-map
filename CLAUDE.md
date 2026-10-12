@@ -101,7 +101,13 @@ it before changing the extraction.
   button animates between flat and 45°, and the compass appears once the map
   is turned. Flat, walls are not extruded at all (the plate draws them as
   smooth outlines; extruded boxes from above are stair-stepped); they rise to
-  about a third of real height as the map tilts. Only storeys *below* the
+  only a tenth of real height as the map tilts, a lip rather than a cut-away
+  model. The look is a phone map's indoor view: cool grey ground, white
+  floors, grey walls, named spaces tinted by kind (`lib/placeCategory.ts`
+  drives both the fill and the label colour), a solid blue route and a red
+  destination pin. On a laptop the panel floats over the map's top-left
+  corner and the viewer frames into the rest (`obscuredLeft`, the sideways
+  twin of `obscuredBottom`). Only storeys *below* the
   active one ghost in when tilted, faintly; the ones above stay hidden. The
   storey stack is still always 110 ft apart — the camera, not the model, is
   what changes, and it is still one renderer: the 3D button moves the camera

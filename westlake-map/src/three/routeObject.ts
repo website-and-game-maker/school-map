@@ -12,14 +12,14 @@
 
 import * as THREE from "three";
 import type { Route3D } from "./routeLift";
-import { DASH, RIBBON, type Materials, type RibbonLayer } from "./theme";
+import { RIBBON, type Materials, type RibbonLayer } from "./theme";
 
 const UP = new THREE.Vector3(0, 1, 0);
 const FALLBACK_UP = new THREE.Vector3(0, 0, 1);
 
 /**
  * A ribbon of constant width along a 3D polyline, mitred at the joins, with a
- * per-vertex `aDist` (feet travelled) that drives the chase dashes.
+ * per-vertex `aDist` (feet travelled along the route).
  *
  * `lift` raises the ribbon along its own normal so the three layers stack
  * without z-fighting.
@@ -114,49 +114,9 @@ function ribbonGeometry(
   return g;
 }
 
-/**
- * Chase dashes, driven from `aDist` so they flow continuously across every
- * leg and straight up through a staircase without a seam. Soft dash ends,
- * because a hard edge crawls with aliasing as the camera moves.
- *
- * The uniform object is module-level and the patch is installed once per
- * material, deliberately. three.js caches compiled programs by the material's
- * cache key, so re-running onBeforeCompile with a *new* uniform object after a
- * route rebuild gets you the cached program still holding a reference to the
- * old object — the dashes freeze and never move again. One object, mutated in
- * place, sidesteps that entirely.
- */
-const DASH_OFFSET = { value: 0 };
-const dashPatched = new WeakSet<THREE.Material>();
-
-function applyDashShader(material: THREE.MeshBasicMaterial): void {
-  if (dashPatched.has(material)) return;
-  dashPatched.add(material);
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uDashOffset = DASH_OFFSET;
-    shader.vertexShader =
-      "attribute float aDist;\nvarying float vDist;\n" +
-      shader.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n vDist = aDist;");
-    shader.fragmentShader =
-      "uniform float uDashOffset;\nvarying float vDist;\n" +
-      shader.fragmentShader.replace(
-        "#include <dithering_fragment>",
-        `#include <dithering_fragment>
-         float period = ${DASH.period.toFixed(2)};
-         float on = ${DASH.on.toFixed(2)};
-         float soft = ${DASH.soften.toFixed(2)};
-         float t = mod(vDist - uDashOffset, period);
-         float a = smoothstep(0.0, soft, t) * (1.0 - smoothstep(on - soft, on, t));
-         gl_FragColor.a *= max(a, 0.13);`
-      );
-  };
-  material.customProgramCacheKey = () => "westlake-route-dash";
-  material.needsUpdate = true;
-}
-
 export interface RouteObject {
   group: THREE.Group;
-  /** Advance the dash flow and the destination pulse. */
+  /** Advance the destination pulse. */
   update(dtSeconds: number): void;
   dispose(): void;
 }
@@ -197,7 +157,6 @@ export function buildRouteObject(route: Route3D, opts: RouteObjectOptions): Rout
     group.add(mesh);
   }
 
-  if (!reducedMotion) applyDashShader(M.routeCore);
 
   // --- staircase ladders -------------------------------------------------
   // The route crosses tens of feet of open air at every floor change. A bare
@@ -272,7 +231,7 @@ export function buildRouteObject(route: Route3D, opts: RouteObjectOptions): Rout
   ball.position.set(end.x, end.y + 13.5, end.z);
   group.add(ball);
 
-  // The pulse is the only looping animation besides the dashes: it is the
+  // The pulse is the only looping animation: it is the
   // "you are going here" cue, and it should be the brightest moving thing.
   const pulseGeom = track(new THREE.RingGeometry(0.86, 1.0, 48));
   const pulse = new THREE.Mesh(pulseGeom, M.pulse.clone());
@@ -290,7 +249,6 @@ export function buildRouteObject(route: Route3D, opts: RouteObjectOptions): Rout
     group,
     update(dt: number) {
       if (reducedMotion) return;
-      DASH_OFFSET.value += DASH.speed * dt;
       // 1.6s expand, 0.4s hold
       pulseT = (pulseT + dt) % 2.0;
       const t = Math.min(1, pulseT / 1.6);

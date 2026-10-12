@@ -13,6 +13,7 @@ import { FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
 import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
 import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
 import { buildSearchIndex, searchItems, type SearchItem } from "./lib/search";
+import { placeCategory } from "./lib/placeCategory";
 import { linksFromMarks, stairMarks } from "./lib/stairsFromMarks";
 import { downloadJson, saveFloorToDisk } from "./lib/save";
 import { EDITING_CONFIGURED, forgetEditor, resolveEditAccess } from "./lib/access";
@@ -87,14 +88,22 @@ export default function App() {
   const [isPhoneLayout, setIsPhoneLayout] = useState(() => matchMedia(PHONE_QUERY).matches);
   // CSS px of the map's bottom edge the sheet covers right now (0 on desktop).
   const [obscuredBottomPx, setObscuredBottomPx] = useState(0);
+  // CSS px of the map's left edge the floating panel covers (0 on a phone).
+  const [obscuredLeftPx, setObscuredLeftPx] = useState(0);
   const measureObscured = useCallback(() => {
     const area = mapAreaRef.current;
     const panel = panelShellRef.current;
+    const phone = matchMedia(PHONE_QUERY).matches;
     const px =
-      area && panel && matchMedia(PHONE_QUERY).matches
+      area && panel && phone
         ? Math.max(0, Math.round(area.getBoundingClientRect().bottom - panel.getBoundingClientRect().top))
         : 0;
+    const left =
+      area && panel && !phone
+        ? Math.max(0, Math.round(panel.getBoundingClientRect().right - area.getBoundingClientRect().left))
+        : 0;
     setObscuredBottomPx(px); // same value bails out, so no re-render
+    setObscuredLeftPx(left);
   }, []);
   useEffect(() => {
     const mq = matchMedia(PHONE_QUERY);
@@ -601,6 +610,7 @@ export default function App() {
                       setToQuery(item.label);
                     }}
                   >
+                    <span className={`chip-dot cat-${placeCategory(name)}`} aria-hidden="true" />
                     {name}
                   </button>
                 );
@@ -878,7 +888,10 @@ export default function App() {
       )}
 
       {!editMode && (
-        <div className="roadmap">
+        // Folded away: a map's panel is for getting somewhere. How accurate
+        // the data is matters, but only to the person who goes looking.
+        <details className="roadmap">
+          <summary className="roadmap-summary">About this map</summary>
           <p className="roadmap-title">What this map knows</p>
 
           {/* Three rows, each one a claim about accuracy with a status you can
@@ -928,7 +941,7 @@ export default function App() {
           <p className="disclaimer">
             Distances and times are estimates from a single scale constant.
           </p>
-        </div>
+        </details>
       )}
     </>
   );
@@ -994,6 +1007,7 @@ export default function App() {
             directions={directions}
             activeStep={activeStep}
             obscuredBottom={obscuredBottomPx}
+            obscuredLeft={obscuredLeftPx}
             onPickFloor={switchFloor}
             // The auto floor selector: settle the map on part of the school
             // where another storey has clearly more to show, and that storey

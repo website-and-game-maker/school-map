@@ -18,6 +18,7 @@
 
 import * as THREE from "three";
 
+import { placeCategory } from "../lib/placeCategory";
 import type { FloorData, FloorId, FloorPoint } from "../types";
 import type { PlacementSet } from "./placement";
 import { planToWorld } from "./placement";
@@ -139,6 +140,13 @@ export class MapLabels {
       if (item.floor !== floor) continue;
       const node = document.createElement("div");
       node.className = `map-label map-label-${item.kind}`;
+      if (item.kind === "landmark") {
+        // A coloured dot by what kind of place it is, like a map's POI pins.
+        node.classList.add(`map-label-cat-${placeCategory(item.text)}`);
+        const dot = document.createElement("span");
+        dot.className = "map-label-dot";
+        node.appendChild(dot);
+      }
       if (item.kind === "restroom" || item.kind === "stairs" || item.kind === "entrance") {
         const icon = document.createElement("span");
         icon.className = "map-label-icon";

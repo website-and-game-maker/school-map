@@ -1,37 +1,37 @@
-// The look of the 3D view, in one place.
+// The look of the map view, in one place.
 //
-// The governing idea: the plan scan is black ink on off-white paper, and that
-// is the product's identity in 2D. So the 3D view is a white chipboard
-// architectural model built on top of the actual scan — not a game level and
-// not a Google-Earth mesh. Colour is spent almost nowhere, which is exactly
-// why the teal route reads instantly.
+// The governing idea: this is a map, not a model. It is drawn the way a phone
+// map draws the inside of a building: flat, cool grey ground, near-white
+// floors, light grey walls, named spaces tinted by what they are, and a solid
+// blue route with a darker edge. Colour is spent on the route, the
+// destination pin and the places, and nowhere else.
 //
-// The two anchor colours are lifted straight from App.css so the sidebar and
-// the model are visibly one product.
+// The ground and the floor colours are shared with floorPlan.ts and App.css,
+// so the sidebar, the 2D editor and the map are visibly one product.
 
 import * as THREE from "three";
 
 export const PALETTE = {
-  ground: 0xeceae6, // --map-ground in App.css, and INK.paper in floorPlan.ts
+  ground: 0xe8eaed, // --map-ground in App.css, and INK.paper in floorPlan.ts
 
-  slabTop: 0xffffff, // multiplier over the scan texture
-  slabTopMuted: 0xcbc4ba, // a storey below the focused one
-  slabEdge: 0xcfc6ba,
+  slabTop: 0xffffff, // multiplier over the drawn plan
+  slabTopMuted: 0xd7dade, // a storey below the focused one
+  slabEdge: 0xd2d5da,
 
-  wallSide: 0xe6e1d9,
-  wallCap: 0xaaa398, // the plate's wall colour, so a wall seen end-on is the same line
-  wallEdgeLine: 0x9a8f80,
+  wallSide: 0xd9dce0,
+  wallCap: 0xa9afb6, // INK.wall, so a wall seen end-on is the same line
+  wallEdgeLine: 0xb4b9bf,
 
-  curb: 0xb9b0a4, // below-focus storeys, unlit on purpose
-  ghostLine: 0x8f8579, // above-focus perimeter
+  curb: 0xc6cad0, // below-focus storeys, unlit on purpose
+  ghostLine: 0x9aa0a6,
   ghostPlate: 0xffffff,
 
-  routeCore: 0x1fbfa6, // a brightened sibling of --accent: #16776a at 3ft wide,
-  routeCasing: 0xffffff, // seen from 400ft against paper, disappears
-  routeHalo: 0x16776a,
+  routeCore: 0x4285f4, // the route: map blue, with a darker edge so it reads
+  routeCasing: 0x1a5fd0, // over white corridors and grey rooms alike
+  routeHalo: 0x1a73e8,
 
-  maroon: 0x7a1f2b, // --maroon, the start marker
-  accent: 0x16776a, // --accent, the destination
+  maroon: 0x202124, // the start marker: a dark ring, as on any map
+  accent: 0xea4335, // the destination pin: map red
 } as const;
 
 export interface RibbonLayer {
@@ -45,13 +45,10 @@ export interface RibbonLayer {
 
 /** Route ribbon layers, widest and lowest first. Widths mirror the 2D CSS. */
 export const RIBBON: Record<"halo" | "casing" | "core", RibbonLayer> = {
-  halo: { width: 11.0, lift: 0.4, color: PALETTE.routeHalo, opacity: 0.11, order: 1 },
-  casing: { width: 5.0, lift: 0.55, color: PALETTE.routeCasing, opacity: 0.88, order: 2 },
-  core: { width: 3.2, lift: 0.7, color: PALETTE.routeCore, opacity: 1.0, order: 3 },
+  halo: { width: 12.0, lift: 0.4, color: PALETTE.routeHalo, opacity: 0.08, order: 1 },
+  casing: { width: 6.2, lift: 0.55, color: PALETTE.routeCasing, opacity: 1.0, order: 2 },
+  core: { width: 4.2, lift: 0.7, color: PALETTE.routeCore, opacity: 1.0, order: 3 },
 };
-
-/** Chase dashes on the core ribbon. Feet, and feet per second. */
-export const DASH = { period: 9.0, on: 5.0, speed: 11.0, soften: 0.6 } as const;
 
 export const CAMERA = {
   fov: 38, // not 50: on a 1200ft object a wide lens keystones like a cartoon

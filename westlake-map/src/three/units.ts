@@ -117,13 +117,14 @@ export const TILTED_ELEVATION_DEG = 45;
 /**
  * How tall the walls are drawn, as a fraction of their real height, at a
  * given camera elevation. Zero looking straight down, where the floor texture
- * already draws every wall as a clean outline and extruded boxes would only
- * add stair-stepped edges; rising to about a third of real height at full
- * tilt, enough to read as walls without turning corridors into canyons.
+ * already draws every wall as a clean outline. Tilted, they rise only to about
+ * a tenth of real height: a lip that gives the plan some depth, the way a
+ * phone map extrudes a building footprint, and not the cut-away model that
+ * full-height walls turned it into.
  */
 export function wallRiseForElevation(elevDeg: number): number {
   const t = clamp01((86 - elevDeg) / 30);
-  return 0.35 * (t * t * (3 - 2 * t));
+  return 0.1 * (t * t * (3 - 2 * t));
 }
 
 /**
@@ -137,7 +138,7 @@ export function wallRiseForElevation(elevDeg: number): number {
  */
 export function ghostOpacityForDimension(dim: number): number {
   const t = clamp01((clamp01(dim) - 0.12) / 0.3);
-  return 0.3 * (t * t * (3 - 2 * t));
+  return 0.14 * (t * t * (3 - 2 * t));
 }
 
 /** World Y of a storey's slab top. */
