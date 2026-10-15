@@ -20,9 +20,9 @@ export const PX_PER_FOOT = 2.6;
 
 // Comfortable walking pace in a school hallway, feet per second. Deliberately
 // on the slower side: between periods you are not walking in a straight line.
-const FEET_PER_SECOND = 4.0;
+export const FEET_PER_SECOND = 4.0;
 // Rough time cost of one flight of stairs, in seconds.
-const SECONDS_PER_STAIRCASE = 25;
+export const SECONDS_PER_STAIRCASE = 25;
 
 export const FLOOR_LABELS: Record<FloorId, string> = {
   lower: "Lower Level",

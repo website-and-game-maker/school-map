@@ -1760,3 +1760,62 @@ button { font-family: inherit; }
   padding: 0 14px;
   font: inherit;
 }
+
+/* ---------------- crowd-sourced timing ---------------- */
+
+.route-basis,
+.route-busy { margin: -4px 0 10px; font-size: 12.5px; color: var(--muted); }
+.route-busy { color: #b06000; }
+
+.walk-timer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f3f4;
+}
+
+.walk-timer.running { flex-direction: column; align-items: stretch; }
+.walk-timer-row { display: flex; align-items: center; gap: 10px; }
+.walk-timer-why { font-size: 12.5px; color: var(--muted); flex: 1; min-width: 160px; }
+.walk-timer-clock { font-size: 22px; font-variant-numeric: tabular-nums; color: var(--primary); }
+.walk-timer-what { font-size: 13px; color: var(--ink); }
+
+.walk-timer-start,
+.walk-timer-arrive,
+.walk-timer-cancel {
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13.5px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.walk-timer-arrive { background: var(--primary); border-color: var(--primary); color: #fff; flex: 1; }
+.walk-timer-start:hover,
+.walk-timer-cancel:hover { background: var(--accent-soft); }
+
+/* ---------------- sponsored card ---------------- */
+
+.sponsor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fafafa;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+a.sponsor-card:hover { background: var(--paper); }
+.sponsor-tag { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sponsor-name { font-size: 14px; font-weight: 500; }
+.sponsor-text { font-size: 12.5px; color: var(--muted); }

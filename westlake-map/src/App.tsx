@@ -11,6 +11,10 @@ import LocateDialog from "./components/LocateDialog";
 import { ICON_PATHS } from "./three/icons";
 import FeedbackPanel from "./components/FeedbackPanel";
 import SchedulePanel from "./components/SchedulePanel";
+import WalkTimer from "./components/WalkTimer";
+import SponsorCard from "./components/SponsorCard";
+import { estimate, fetchSharedReports, loadLocalReports, mergeReports, type TimingReport } from "./lib/timing";
+import { sponsorFor } from "./lib/sponsors";
 import { FLOOR_ORDER, INITIAL_FLOORS, INITIAL_STAIRS } from "./data/floors";
 import { route as computeRoute, clearRouteCache, type Endpoint } from "./lib/router";
 import { buildDirections, FLOOR_LABELS, PX_PER_FOOT } from "./lib/directions";
@@ -233,6 +237,30 @@ export default function App() {
           : toItem.label;
     return buildDirections(legs, startLabel, endLabel);
   }, [routeResult, legs, fromItem, toItem]);
+
+  // Crowd-sourced timing: this device's timed walks plus everyone's, if the
+  // build points at a shared pool (lib/timing.ts). They refine the minutes.
+  const [localReports, setLocalReports] = useState<TimingReport[]>(() => loadLocalReports());
+  const [sharedReports, setSharedReports] = useState<TimingReport[]>([]);
+  useEffect(() => {
+    let live = true;
+    void fetchSharedReports().then((r) => live && setSharedReports(r));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const timing = useMemo(() => {
+    if (!directions || !fromItem || !toItem) return null;
+    return estimate(
+      fromItem.key,
+      toItem.key,
+      directions.totalFeet,
+      directions.flights,
+      mergeReports(localReports, sharedReports)
+    );
+  }, [directions, fromItem, toItem, localReports, sharedReports]);
+  const routeMinutes = timing?.minutes ?? directions?.minutes ?? 0;
+  const sponsor = useMemo(() => sponsorFor(toItem), [toItem]);
 
   const currentLeg = legs[segIndex] ?? null;
   const isFirstLeg = segIndex === 0;
@@ -682,7 +710,7 @@ export default function App() {
           {directions && routeResult && (
             <div className="route-summary">
               <div className="route-headline">
-                <span className="route-time">≈ {directions.minutes} min</span>
+                <span className="route-time">≈ {routeMinutes} min</span>
                 <span className="route-dist">{directions.totalFeet} ft</span>
                 {directions.flights > 0 && (
                   <span className="route-flights">
@@ -690,6 +718,19 @@ export default function App() {
                   </span>
                 )}
               </div>
+
+              {timing && timing.basis !== "default" && (
+                <p className="route-basis">
+                  {timing.basis === "route"
+                    ? `Based on ${timing.count} timed walks of this route`
+                    : `Adjusted to how fast people really walk (${timing.count} timed walks)`}
+                </p>
+              )}
+              {timing?.busier && (
+                <p className="route-busy">
+                  Hallways are usually {Math.round(timing.busier * 100)}% slower around this time.
+                </p>
+              )}
 
               {segments.length > 1 && (
                 <div className="route-path">
@@ -725,6 +766,16 @@ export default function App() {
                   Stair locations are still a best guess — see About this map in the menu.
                 </p>
               )}
+              {fromItem && toItem && (
+                <WalkTimer
+                  from={fromItem}
+                  to={toItem}
+                  feet={directions.totalFeet}
+                  flights={directions.flights}
+                  onReported={(r) => setLocalReports((prev) => [...prev, r])}
+                />
+              )}
+              {sponsor && <SponsorCard sponsor={sponsor} />}
               <button className="clear-btn" onClick={clearRoute}>
                 Clear route
               </button>
@@ -1228,7 +1279,7 @@ export default function App() {
         >
           <span className="grabber" />
           <span className="sheet-peek">
-            {directions ? `≈ ${directions.minutes} min · ${destLabel}` : panelTitle}
+            {directions ? `≈ ${routeMinutes} min · ${destLabel}` : panelTitle}
           </span>
         </button>
         <div className="panel-scroll">{panel}</div>
