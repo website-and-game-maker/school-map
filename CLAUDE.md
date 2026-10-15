@@ -50,6 +50,17 @@ invalidates `PX_PER_FOOT`, `align3d.json` and every traced point at once.
   day's walks between them, timed by the same `route()` and `buildDirections()`
   as an ordinary search (walks over `PASSING_PERIOD_MINUTES` are flagged).
   Clicking a walk in `components/SchedulePanel.tsx` just sets From and To.
+  `timing.ts` is crowd-sourced walking time: "Time this walk" in the
+  directions card (`components/WalkTimer.tsx`) records how long a real walk
+  took; the minutes shown become the median of timed walks of that route,
+  else the crowd's median pace, else the built-in 4 ft/s, and walks from
+  around the current time of day flag busy hallways. Reports stay on the
+  device and, when the build sets `VITE_TIMING_ENDPOINT` (repo variable
+  `TIMING_ENDPOINT`), are pooled through `api/timings.js` at the repo root, a
+  Vercel function over Upstash Redis. `sponsors.ts` + `src/data/sponsors.json`
+  is the one sponsored card under the directions: free for students, paid
+  for by sponsors; adding one is a data-only PR, and a `house` entry
+  advertises the slot when no sponsor is set.
 - `src/three/` — the map view (three.js, drawn to read as a map). `units.ts`
   and `placement.ts` are the coordinate foundation — `units.ts` also owns
   storey spacing, the tilt limits, the ghost-opacity curve and how far walls

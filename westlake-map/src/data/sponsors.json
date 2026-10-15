@@ -1,0 +1,11 @@
+{
+  "_readme": "Sponsored cards shown in the directions panel. The map is free for students; these pay for it. Each entry: id, name, text, optional url (https only), optional near (search-item keys or labels such as \"Cafeteria\" or \"245\": the card is preferred when the route ends there). With several entries, one is picked per destination so it doesn't flicker. An empty list shows nothing. Every card is labelled Sponsored.",
+  "sponsors": [
+    {
+      "id": "house",
+      "name": "Sponsor Westlake Map",
+      "text": "This map is free for every student. Local businesses can sponsor this spot to keep it that way.",
+      "house": true
+    }
+  ]
+}

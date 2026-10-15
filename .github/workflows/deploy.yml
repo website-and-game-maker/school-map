@@ -49,6 +49,9 @@ jobs:
           # is unset the editing tools are simply absent from the published
           # site, which is the safe way for this to fail.
           VITE_EDIT_KEY_SHA256: ${{ vars.EDIT_KEY_SHA256 }}
+          # Where crowd-sourced walk times are pooled (api/timings.js). Unset,
+          # each visitor's timings stay on their own device.
+          VITE_TIMING_ENDPOINT: ${{ vars.TIMING_ENDPOINT }}
         run: npm run build
 
       # Pages serves 404.html for any unknown path. The app is a single page
