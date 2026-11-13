@@ -117,14 +117,16 @@ export const TILTED_ELEVATION_DEG = 45;
 /**
  * How tall the walls are drawn, as a fraction of their real height, at a
  * given camera elevation. Zero looking straight down, where the floor texture
- * already draws every wall as a clean outline. Tilted, they rise only to about
- * a tenth of real height: a lip that gives the plan some depth, the way a
- * phone map extrudes a building footprint, and not the cut-away model that
- * full-height walls turned it into.
+ * already draws every wall as a clean outline. Tilted, they rise to 40% of
+ * real height (about 4 ft for a classroom wall): enough to read as walls
+ * standing on a floor, which the owner asked to have back after a
+ * tenth-height lip made the tilted view look like flat paper, and still low
+ * enough that rooms stay open to the camera rather than turning into the
+ * cut-away model that full-height walls made.
  */
 export function wallRiseForElevation(elevDeg: number): number {
   const t = clamp01((86 - elevDeg) / 30);
-  return 0.1 * (t * t * (3 - 2 * t));
+  return 0.4 * (t * t * (3 - 2 * t));
 }
 
 /**

@@ -32,6 +32,7 @@ import {
   FLOOR_INDEX,
   MAP_ELEVATION_DEG,
   MAX_TILT_DEG,
+  SLAB_THICKNESS,
   SPREAD,
   TILTED_ELEVATION_DEG,
   dimensionForElevation,
@@ -40,10 +41,10 @@ import {
   wallRiseForElevation,
 } from "./units";
 import { MapLabels, buildLabelItems, type MapLabelItem } from "./labels";
-import { pickFloor, type FloorAnchors } from "./autoFloor";
+import { coverage, makeShape, pickFloor, type FloorShapes, type Sample } from "./autoFloor";
 import { buildStairColumns, type StairColumns } from "./stairColumns";
 import { planToWorld, type PlacementSet } from "./placement";
-import { buildWallGeometry, buildWallTopEdges } from "./walls";
+import { buildWallGeometry, buildWallTopEdges, wallsFile } from "./walls";
 import { buildSlabGeometry } from "./slab";
 import { buildOutdoor, createAttribution, type OutdoorLayer } from "./outdoor";
 import { TextureCache } from "./textures";
@@ -54,6 +55,7 @@ import {
   CAMERA,
   FLY,
   PALETTE,
+  SLAB_SHADOW,
   clamp,
   createMaterials,
   disposeMaterials,
@@ -146,6 +148,9 @@ interface FloorParts {
   edges: THREE.LineSegments;
   slab: THREE.Mesh;
   skirt: THREE.Mesh;
+  /** A soft offset shadow under the focused plate, so the floor reads as a
+   *  slab lying on the ground rather than paint on it. */
+  shadow: THREE.Mesh;
   ghostPlate: THREE.Mesh;
   ghostOutline: THREE.LineSegments;
   slabMaterial: THREE.MeshBasicMaterial;
@@ -197,7 +202,7 @@ export class MapViewer3D {
   /** Fixed: the stack is always open. See units.ts. */
   private readonly spread = SPREAD;
   private labels: MapLabels;
-  private anchors: FloorAnchors | null = null;
+  private shapes: FloorShapes | null = null;
   private tween: CameraTween | null = null;
   private lastViewState = "";
   /** Set by a user gesture; the floor check only answers to the user. */
@@ -250,10 +255,6 @@ export class MapViewer3D {
     this.applyFloorStates();
     this.invalidate();
     this.reportViewState();
-    if (this.userMoved && !this.tween && !this.cameraDriven) {
-      window.clearTimeout(this.floorCheckTimer);
-      this.floorCheckTimer = window.setTimeout(this.checkFloorFromView, 260);
-    }
   };
   private onGestureStart = () => {
     this.tween = null; // a finger on the map always beats an animation
@@ -263,9 +264,17 @@ export class MapViewer3D {
     this.userMoved = true;
     this.gestureEnded = false;
     this.framedUntouched = false;
+    window.clearTimeout(this.floorCheckTimer);
   };
   private onGestureEnd = () => {
     this.gestureEnded = true;
+    // Decide shortly after the finger lifts, not once the camera has stopped
+    // moving. Damping keeps nudging the camera by ever smaller amounts for
+    // seconds after a flick (longer on a slow phone), and waiting for that to
+    // go quiet is what made the floor seem never to switch. A new gesture
+    // inside the window cancels it, so a run of wheel ticks is one decision.
+    window.clearTimeout(this.floorCheckTimer);
+    this.floorCheckTimer = window.setTimeout(this.checkFloorFromView, 320);
   };
   private onPointerDown = (e: PointerEvent) => {
     this.pointerDown = { x: e.clientX, y: e.clientY, t: performance.now() };
@@ -346,6 +355,7 @@ export class MapViewer3D {
     this.attribution = createAttribution(host);
 
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
+    this.syncShapes();
     this.syncLabels();
     this.syncHere(false);
     this.applyFloorStates();
@@ -485,6 +495,14 @@ export class MapViewer3D {
     const skirtMesh = new THREE.Mesh(skirt, this.materials.slabSkirt);
     group.add(skirtMesh);
 
+    // Same plate, dropped a little south-east and under the slab: the cheapest
+    // way to make a floor look like a floor from straight above, where the
+    // skirt is edge-on and invisible.
+    const shadow = new THREE.Mesh(top, this.materials.slabShadow);
+    shadow.position.set(SLAB_SHADOW.dx, -SLAB_THICKNESS - 0.2, SLAB_SHADOW.dz);
+    shadow.renderOrder = -2;
+    group.add(shadow);
+
     // A storey above the focused one is replaced by a glass plate plus its
     // outline: it keeps a body without hiding anything below it.
     const ghostPlate = new THREE.Mesh(top, this.materials.ghostPlate);
@@ -505,6 +523,7 @@ export class MapViewer3D {
       edges,
       slab,
       skirt: skirtMesh,
+      shadow,
       ghostPlate,
       ghostOutline,
       slabMaterial,
@@ -588,6 +607,7 @@ export class MapViewer3D {
       parts.walls.visible = !hidden && wallsUp;
       parts.slab.visible = !hidden;
       parts.skirt.visible = !hidden;
+      parts.shadow.visible = focus;
 
       parts.slabMaterial.color.setHex(focus ? 0xffffff : 0xcfc9c0);
       parts.slabMaterial.opacity = focus ? 1 : ghost;
@@ -624,6 +644,7 @@ export class MapViewer3D {
     }
     this.floorParts.clear();
     for (const f of FLOOR_ORDER) this.ensureFloor(f);
+    this.syncShapes();
     this.syncLabels();
     this.applyFloorStates();
     for (const f of FLOOR_ORDER) void this.loadFloorTexture(f);
@@ -684,29 +705,92 @@ export class MapViewer3D {
    * view than the one being shown, and if so, switch to it.
    */
   private checkFloorFromView = () => {
-    if (this.disposed || this.cameraDriven || this.tween || !this.anchors) return;
+    if (this.disposed || this.cameraDriven || this.tween || !this.shapes) return;
     if (!this.gestureEnded) return; // still being dragged; damping will call back
     this.userMoved = false;
     this.gestureEnded = false;
-    // The circle that counts as "where you are looking": a bit under half the
-    // visible height. Zoomed right out to the whole school there is nothing
-    // to infer — every floor is in view — so leave the choice alone.
+    // Zoomed right out to the whole school every floor is in view, so there is
+    // nothing to infer from it — leave the choice alone.
     const visibleHalf = this.cameraDistance() * Math.tan((CAMERA.fov * Math.PI) / 360) * this.visibleFraction();
     if (visibleHalf > 520) return;
-    const radius = clamp(visibleHalf * 0.45, 30, 200);
+    const samples = this.viewSamples();
+    if (samples.length < 8) return;
+    const cover = coverage(this.shapes, FLOOR_ORDER, samples);
+    const current = this.props.activeFloor;
     const t = this.controls.target;
     if (this.pinnedAt) {
-      const dx = t.x - this.pinnedAt.x;
-      const dz = t.z - this.pinnedAt.z;
-      if (Math.hypot(dx, dz) < Math.max(160, radius * 2)) return;
+      // A floor somebody chose holds until the map moves well away from where
+      // they chose it, unless they have since panned off it entirely.
+      const moved = Math.hypot(t.x - this.pinnedAt.x, t.z - this.pinnedAt.z);
+      if (moved < Math.max(160, visibleHalf * 0.6) && cover[current] > 0.05) return;
       this.setPin(null);
     }
-    const next = pickFloor(this.anchors, FLOOR_ORDER, this.props.activeFloor, t.x, t.z, radius);
-    if (next !== this.props.activeFloor) {
+    if (import.meta.env.DEV) {
+      const pct = (f: FloorId) => `${f} ${(cover[f] * 100).toFixed(0)}%`;
+      console.debug(`[auto floor] ${FLOOR_ORDER.map(pct).join(", ")} (on ${current})`);
+    }
+    const next = pickFloor(cover, FLOOR_ORDER, current);
+    if (next !== current) {
       this.requestedFloor = next;
       this.cb.onFocusFloor?.(next);
     }
   };
+
+  /**
+   * The part of the map that is actually on screen, as points on the ground:
+   * a grid over the canvas minus whatever the panel or sheet covers, each
+   * dropped onto the plane of the floor being shown. The middle weighs more,
+   * because that is where people put what they mean to look at.
+   */
+  private viewSamples(): Sample[] {
+    const w = Math.max(1, this.host.clientWidth);
+    const h = Math.max(1, this.host.clientHeight);
+    const left = w * (1 - this.visibleWidthFraction(w));
+    const bottom = h * (1 - this.visibleFraction(h));
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -storeyY(this.props.activeFloor, this.spread));
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const hit = new THREE.Vector3();
+    const out: Sample[] = [];
+    const COLS = 16;
+    const ROWS = 12;
+    for (let j = 0; j < ROWS; j++) {
+      for (let i = 0; i < COLS; i++) {
+        const u = (i + 0.5) / COLS; // 0..1 across the visible strip
+        const v = (j + 0.5) / ROWS;
+        const px = left + u * (w - left);
+        const py = v * (h - bottom);
+        ndc.set((px / w) * 2 - 1, -(py / h) * 2 + 1);
+        ray.setFromCamera(ndc, this.camera);
+        if (!ray.ray.intersectPlane(plane, hit)) continue;
+        const du = u - 0.5;
+        const dv = v - 0.5;
+        out.push({ x: hit.x, z: hit.z, w: Math.exp(-(du * du + dv * dv) / (2 * 0.3 * 0.3)) });
+      }
+    }
+    return out;
+  }
+
+  /** Each storey's footprint in world feet, for the auto floor selector. */
+  private syncShapes(): void {
+    const shapes = {} as FloorShapes;
+    for (const f of FLOOR_ORDER) {
+      const p = this.placements[f];
+      const rings: number[][] = [];
+      for (const part of wallsFile(f).footprint) {
+        for (const ring of [part.outer, ...(part.holes ?? [])]) {
+          const r: number[] = [];
+          for (let i = 0; i + 1 < ring.length; i += 2) {
+            const wpt = planToWorld(p, ring[i], ring[i + 1], 0);
+            r.push(wpt[0], wpt[2]);
+          }
+          rings.push(r);
+        }
+      }
+      shapes[f] = makeShape(rings);
+    }
+    this.shapes = shapes;
+  }
 
   private setPin(at: THREE.Vector3 | null): void {
     const was = this.pinnedAt !== null;
@@ -736,14 +820,9 @@ export class MapViewer3D {
     this.invalidate();
   }
 
-  /** Place names and the auto-floor anchors, both from the same points. */
+  /** Place names, for every storey. */
   private syncLabels(): void {
     const items = buildLabelItems(this.props.floors, this.placements, this.spread);
-    const anchors = {} as Record<FloorId, number[]>;
-    for (const f of FLOOR_ORDER) anchors[f] = [];
-    // Anchors before the outdoor names go in: autoFloor counts the school's
-    // places, and a street name is on every floor at once.
-    for (const it of items) anchors[it.floor].push(it.world.x, it.world.z);
     for (const f of FLOOR_ORDER) {
       const y = storeyY(f, this.spread);
       this.outdoor.labels.forEach((l, i) =>
@@ -759,11 +838,6 @@ export class MapViewer3D {
     }
     this.labels.setItems(items);
     this.labels.setFloor(this.props.activeFloor);
-    this.anchors = {
-      lower: new Float32Array(anchors.lower),
-      main: new Float32Array(anchors.main),
-      upper: new Float32Array(anchors.upper),
-    };
     this.invalidate();
   }
 
