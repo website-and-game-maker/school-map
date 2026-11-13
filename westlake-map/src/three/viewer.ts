@@ -35,13 +35,16 @@ import {
   SLAB_THICKNESS,
   SPREAD,
   TILTED_ELEVATION_DEG,
-  dimensionForElevation,
-  ghostOpacityForDimension,
+  STACK,
+  STACK_STEP_BACK,
+  stackForElevation,
   storeyY,
   wallRiseForElevation,
 } from "./units";
 import { MapLabels, buildLabelItems, type MapLabelItem } from "./labels";
 import { coverage, makeShape, pickFloor, type FloorShapes, type Sample } from "./autoFloor";
+import { FloorTags } from "./floorTags";
+import { FLOOR_LABELS } from "../lib/directions";
 import { buildStairColumns, type StairColumns } from "./stairColumns";
 import { planToWorld, type PlacementSet } from "./placement";
 import { buildWallGeometry, buildWallTopEdges, wallsFile } from "./walls";
@@ -153,6 +156,7 @@ interface FloorParts {
   shadow: THREE.Mesh;
   ghostPlate: THREE.Mesh;
   ghostOutline: THREE.LineSegments;
+  ghostOutlineMaterial: THREE.LineBasicMaterial;
   slabMaterial: THREE.MeshBasicMaterial;
   /** Cloned per floor: the unfocused storeys need their own opacity. */
   wallMaterials: THREE.MeshStandardMaterial[];
@@ -202,6 +206,7 @@ export class MapViewer3D {
   /** Fixed: the stack is always open. See units.ts. */
   private readonly spread = SPREAD;
   private labels: MapLabels;
+  private floorTags: FloorTags;
   private shapes: FloorShapes | null = null;
   private tween: CameraTween | null = null;
   private lastViewState = "";
@@ -287,8 +292,34 @@ export class MapViewer3D {
     if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6 || performance.now() - d.t > 500) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const hit = this.labels.hitTest(e.clientX - rect.left, e.clientY - rect.top, this.coarse ? 16 : 8);
-    if (hit) this.cb.onPickPlace?.(hit);
+    if (hit) {
+      this.cb.onPickPlace?.(hit);
+      return;
+    }
+    // Stacked, tapping another storey's plate moves you to that floor. A tap
+    // that lands on the floor you are reading stays on it, even where a glass
+    // plate above overlaps it, so reading the map never flips floors.
+    const floor = this.floorAt(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
+    if (floor && floor !== this.props.activeFloor) this.cb.onPickFloor?.(floor);
   };
+
+  /** Which visible storey's plate is under a point on the canvas, if any. */
+  private floorAt(x: number, y: number, w: number, h: number): FloorId | null {
+    if (stackForElevation(this.currentElevationDeg()) < 0.5) return null;
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((x / w) * 2 - 1, -(y / h) * 2 + 1), this.camera);
+    const slabs: THREE.Object3D[] = [];
+    const floorOf = new Map<THREE.Object3D, FloorId>();
+    for (const [f, parts] of this.floorParts) {
+      if (!parts.slab.visible) continue;
+      slabs.push(parts.slab);
+      floorOf.set(parts.slab, f);
+    }
+    const hits = ray.intersectObjects(slabs, false);
+    if (!hits.length) return null;
+    if (hits.some((hh) => floorOf.get(hh.object) === this.props.activeFloor)) return this.props.activeFloor;
+    return floorOf.get(hits[0].object) ?? null;
+  }
 
   constructor(host: HTMLElement, props: Viewer3DProps, cb: Viewer3DCallbacks) {
     this.host = host;
@@ -346,6 +377,15 @@ export class MapViewer3D {
     this.renderer.domElement.addEventListener("pointerup", this.onPointerUp);
 
     this.labels = new MapLabels(host);
+    this.floorTags = new FloorTags(
+      host,
+      {
+        upper: FLOOR_LABELS.upper.replace(" Level", ""),
+        main: FLOOR_LABELS.main.replace(" Level", ""),
+        lower: FLOOR_LABELS.lower.replace(" Level", ""),
+      },
+      (f) => this.cb.onPickFloor?.(f)
+    );
 
     this.setupLights();
     this.scene.background = new THREE.Color(PALETTE.ground);
@@ -512,7 +552,9 @@ export class MapViewer3D {
 
     const outlineGeom = new THREE.EdgesGeometry(top, 20);
     owned.push(outlineGeom);
-    const ghostOutline = new THREE.LineSegments(outlineGeom, this.materials.ghostLine);
+    const ghostOutlineMaterial = this.materials.ghostLine.clone();
+    owned.push(ghostOutlineMaterial);
+    const ghostOutline = new THREE.LineSegments(outlineGeom, ghostOutlineMaterial);
     ghostOutline.visible = false;
     group.add(ghostOutline);
 
@@ -526,6 +568,7 @@ export class MapViewer3D {
       shadow,
       ghostPlate,
       ghostOutline,
+      ghostOutlineMaterial,
       slabMaterial,
       wallMaterials,
       owned,
@@ -565,65 +608,70 @@ export class MapViewer3D {
 
   private applyFloorStates(): void {
     const activeIdx = FLOOR_INDEX[this.props.activeFloor];
-    // Looking straight down, the storeys are all at the same height, so the
-    // unfocused ones would sit exactly on top of the one being read and turn
-    // it to mush. They fade out as the camera flattens toward plan, which is
-    // also what makes "flat" read as a plan of ONE floor rather than a bad 3D
-    // view — and back in the moment the drag tilts away from it, since this
-    // is read straight off the camera's own elevation now.
+    // Looking straight down the three storeys project onto the same place, so
+    // flat shows the one being read and nothing else. Tilt the map and the
+    // whole building comes apart into its stack: every floor visible at once,
+    // the way you'd want to see how the levels sit on each other, with the
+    // one being read solid and the rest standing back. `stack` is 0 flat and
+    // 1 once tilted, read straight off the camera so a drag fades it in.
     const elev = this.currentElevationDeg();
-    const ghost = ghostOpacityForDimension(dimensionForElevation(elev));
+    const stack = stackForElevation(elev);
     // Flat, there are no extruded walls at all — the plate draws them. They
-    // grow out of the floor as the view tilts, which is what tells you the
-    // tilt did something, and never get taller than a low partition: this is
-    // a map you can lean, not a model you walk around.
+    // grow out of the floor as the view tilts.
     const rise = wallRiseForElevation(elev);
 
     // The streets and fields follow the storey being read, a foot under its
-    // slab, so every floor is seen in its surroundings and the slab covers
-    // the building's own outline.
+    // slab. They write no depth, so the floors below still show through.
     this.outdoor.group.position.y = storeyY(this.props.activeFloor, this.spread) - 1;
 
-    // Tilted, the storeys below the one being read show through as faint
-    // plates, so you can see there is more building under you. The ones above
-    // stay hidden: they sit between the camera and the floor you are reading,
-    // and a map you have to read through another map is not a map. Ghosts get
-    // no walls either — a ghost is a footprint, not a second model.
     for (const floor of FLOOR_ORDER) {
       const parts = this.floorParts.get(floor);
       if (!parts) continue;
-      const focus = FLOOR_INDEX[floor] === activeIdx;
+      const idx = FLOOR_INDEX[floor];
+      const focus = idx === activeIdx;
+      const above = idx > activeIdx;
       parts.group.position.y = storeyY(floor, this.spread);
 
-      parts.ghostPlate.visible = false;
-      parts.ghostOutline.visible = false;
+      // How solid this storey is drawn. A floor above the one being read sits
+      // between it and the camera, so it is a light glass plate with its
+      // walls, never something you read through; one below is a muted but
+      // clearly real floor.
+      const slabOpacity = focus ? 1 : (above ? STACK.aboveSlab : STACK.belowSlab) * stack;
+      const wallOpacity = focus ? 1 : (above ? STACK.aboveWalls : STACK.belowWalls) * stack;
+      const hidden = !focus && stack < 0.02;
+      const wallsUp = rise > 0.02;
 
-      const above = FLOOR_INDEX[floor] > activeIdx;
-      const hidden = !focus && (ghost < 0.02 || above);
-      const wallsUp = focus && rise > 0.02;
       parts.walls.scale.y = Math.max(rise, 0.001);
       parts.edges.scale.y = Math.max(rise, 0.001);
       parts.edges.visible = focus && wallsUp;
       parts.walls.visible = !hidden && wallsUp;
       parts.slab.visible = !hidden;
-      parts.skirt.visible = !hidden;
+      parts.skirt.visible = !hidden && !above;
       parts.shadow.visible = focus;
+      parts.ghostPlate.visible = false;
+      // The footprint's outline, so a glass plate above still has an edge.
+      parts.ghostOutline.visible = !hidden && !focus;
+      parts.ghostOutlineMaterial.opacity = (above ? 0.55 : 0.4) * stack;
 
-      parts.slabMaterial.color.setHex(focus ? 0xffffff : 0xcfc9c0);
-      parts.slabMaterial.opacity = focus ? 1 : ghost;
+      parts.slabMaterial.color.setHex(focus ? 0xffffff : above ? 0xf4f6f8 : 0xdde1e6);
+      parts.slabMaterial.opacity = slabOpacity;
       parts.slabMaterial.transparent = !focus;
       parts.slabMaterial.depthWrite = focus;
       parts.slabMaterial.needsUpdate = true;
 
       for (const m of parts.wallMaterials) {
-        m.opacity = focus ? 1 : ghost * 0.72;
+        m.opacity = wallOpacity;
         m.transparent = !focus;
         m.depthWrite = focus;
         m.needsUpdate = true;
       }
 
-      parts.walls.renderOrder = focus ? 0 : -1;
-      parts.slab.renderOrder = focus ? 0 : -1;
+      // Below first, then the floor being read, then the glass above it, so
+      // the transparent storeys blend over what is under them.
+      const order = focus ? 0 : above ? 4 + idx : -4 + idx;
+      parts.walls.renderOrder = order;
+      parts.slab.renderOrder = order;
+      parts.ghostOutline.renderOrder = order;
     }
   }
 
@@ -788,6 +836,13 @@ export class MapViewer3D {
         }
       }
       shapes[f] = makeShape(rings);
+      // The tag rides the plate's west end, a little inside it.
+      let wx = Infinity;
+      let wz = 0;
+      for (const r of rings) {
+        for (let i = 0; i < r.length; i += 2) if (r[i] < wx) [wx, wz] = [r[i], r[i + 1]];
+      }
+      if (Number.isFinite(wx)) this.floorTags.setAnchor(f, new THREE.Vector3(wx, storeyY(f, this.spread), wz));
     }
     this.shapes = shapes;
   }
@@ -859,9 +914,12 @@ export class MapViewer3D {
   /** Lean the map back, or flatten it again. */
   toggleTilt(): void {
     const flat = this.currentElevationDeg() >= MAP_ELEVATION_DEG - 4;
+    // Leaning back also steps back a little, so the floors above and below
+    // the one you are on come into frame with it.
+    const dist = clamp(this.cameraDistance() * (flat ? STACK_STEP_BACK : 1 / STACK_STEP_BACK), CAMERA.minDistance, CAMERA.maxDistance);
     this.animateTo(
       this.controls.target.clone(),
-      this.cameraDistance(),
+      dist,
       flat ? TILTED_ELEVATION_DEG : MAP_ELEVATION_DEG,
       this.currentAzimuthDeg(),
       520
@@ -1320,6 +1378,13 @@ export class MapViewer3D {
       this.pxPerFoot(),
       false
     );
+    this.floorTags.layout(
+      this.camera,
+      Math.max(1, this.host.clientWidth),
+      Math.max(1, this.host.clientHeight),
+      this.props.activeFloor,
+      !this.flight && stackForElevation(this.currentElevationDeg()) > 0.5
+    );
     this.dirty = false;
   };
 
@@ -1338,6 +1403,7 @@ export class MapViewer3D {
     this.renderer.domElement.removeEventListener("pointerup", this.onPointerUp);
     this.controls.dispose();
     this.labels.dispose();
+    this.floorTags.dispose();
     this.attribution.remove();
     this.flight = null;
 

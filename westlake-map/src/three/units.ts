@@ -68,12 +68,12 @@ export const GROUND_Y = -8;
 // is a model you stop trusting. So the stack is simply always open, and tilt
 // is a camera-only effect.
 
-// Storey separation, fixed. On a building 1200 ft across, three storeys any
-// closer than this read as one surface from any sensible angle: you see Main's
-// 2xx room numbers and Upper's 3xx numbers side by side and assume they are on
-// the same floor. At 110 ft the trays are unmistakably separate and it is still
-// only 9% of the building's width, so it never reads as a tower.
-export const SPREAD = 110;
+// Storey separation, fixed. Tilted, all three storeys are on screen at once,
+// so they have to come visibly apart: at 110 ft and a 40-45° tilt Upper sat
+// almost on top of Main and nobody could say which plate was which. At 220 ft
+// each floor has its own band of the screen, and flat it changes nothing,
+// because only the floor being read is drawn there.
+export const SPREAD = 220;
 
 /** Matches FLOOR_HEIGHT in directions.ts — the storeys' real spacing. */
 export const SPREAD_COMPACT = 16;
@@ -112,7 +112,7 @@ export const MAP_ELEVATION_DEG = 89.9;
 export const MAX_TILT_DEG = 50;
 
 /** Where the tilt button leans to. */
-export const TILTED_ELEVATION_DEG = 45;
+export const TILTED_ELEVATION_DEG = 40.5;
 
 /**
  * How tall the walls are drawn, as a fraction of their real height, at a
@@ -147,3 +147,27 @@ export function ghostOpacityForDimension(dim: number): number {
 export function storeyY(floor: FloorId, spread: number): number {
   return FLOOR_INDEX[floor] * spread;
 }
+
+/**
+ * How far the storey stack has come apart, 0..1, at a camera elevation.
+ * Flat it is 0: the storeys project onto each other and only the floor being
+ * read is drawn. By the time the map leans back to the 3D button's 45° it is
+ * 1, and every floor is on screen at once.
+ */
+export function stackForElevation(elevDeg: number): number {
+  const t = clamp01((85 - elevDeg) / 15);
+  return t * t * (3 - 2 * t);
+}
+
+/** How solid the storeys that are not being read are drawn, fully stacked. */
+export const STACK = {
+  /** Floors below: muted, but clearly a floor with walls. */
+  belowSlab: 0.75,
+  belowWalls: 0.7,
+  /** Floors above sit between you and the one you are reading: glass. */
+  aboveSlab: 0.28,
+  aboveWalls: 0.45,
+} as const;
+
+/** How much further back the 3D button puts the camera, to fit the stack. */
+export const STACK_STEP_BACK = 1.3;
