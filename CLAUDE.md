@@ -129,10 +129,13 @@ it before changing the extraction.
   you never read through one (`STACK` and `stackForElevation` in `units.ts`).
   Each plate carries a tappable floor-name pill (`three/floorTags.ts`), and
   tapping another floor's plate also switches to it. Flat, only the active
-  floor is drawn, because the storeys project onto each other. The storey
-  stack is always 220 ft apart (110 overlapped too much to tell the floors
-  apart at a 40° tilt), and the 3D button leans to the full tilt and steps
-  back 1.3x to fit it — the camera, not the model, is
+  floor is drawn, because the storeys project onto each other. The map
+  **opens tilted** (`resetView`, at `TILTED_ELEVATION_DEG`) so the stack is
+  the first thing you see, and the floors sit **directly on top of each
+  other** like the real building, 40 ft apart (`SPREAD`: real is ~16, a
+  220 ft gap was tried and read as maps side by side). The floor-name pills
+  stand in one column west of the building, each at its storey's height.
+  The 3D/2D button flattens to one floor and back — the camera, not the model, is
   what changes, and it is still one renderer: the 3D button moves the camera
   of the same scene, it does not swap to the 2D renderer. Editing is the one
   thing that uses the 2D renderer, because the edit overlay is SVG.
@@ -232,8 +235,9 @@ Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
   the straight-line skeleton all fail — see the commit message on the fix for the
   measurements. What works is a per-component *shape* test applied before the
   heal, while the artefacts are still free-floating.
-- **"All Levels" layering.** Fixed by raising the storey spread to 110 ft,
-  later 220 ft once all floors are shown together.
+- **"All Levels" layering.** Fixed by raising the storey spread to 110 ft.
+  Now 40 ft, with the floors above drawn as glass, because the owner wants
+  them stacked like the real building.
 - **Doors drawn open, furniture noise, pixelated walls.** All three were the
   same root cause — "a wall is a long straight run of ink" — and all three went
   away with the separator definition above. Do not reach for a door-arc

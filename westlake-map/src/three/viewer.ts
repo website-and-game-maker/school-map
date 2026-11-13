@@ -667,8 +667,10 @@ export class MapViewer3D {
       }
 
       // Below first, then the floor being read, then the glass above it, so
-      // the transparent storeys blend over what is under them.
-      const order = focus ? 0 : above ? 4 + idx : -4 + idx;
+      // the transparent storeys blend over what is under them — and all of
+      // it before the route (renderOrder 1-3), which must never be dimmed by
+      // the floor overhead.
+      const order = focus ? 0 : above ? 0.5 + idx * 0.1 : -4 + idx;
       parts.walls.renderOrder = order;
       parts.slab.renderOrder = order;
       parts.ghostOutline.renderOrder = order;
@@ -836,15 +838,23 @@ export class MapViewer3D {
         }
       }
       shapes[f] = makeShape(rings);
-      // The tag rides the plate's west end, a little inside it.
-      let wx = Infinity;
-      let wz = 0;
-      for (const r of rings) {
-        for (let i = 0; i < r.length; i += 2) if (r[i] < wx) [wx, wz] = [r[i], r[i + 1]];
-      }
-      if (Number.isFinite(wx)) this.floorTags.setAnchor(f, new THREE.Vector3(wx, storeyY(f, this.spread), wz));
     }
     this.shapes = shapes;
+    // The floor names stand in one column just west of the building, each at
+    // its own storey's height, so they read as a section through the stack:
+    // Upper over Main over Lower, exactly as far apart as the floors are.
+    let minX = Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const f of FLOOR_ORDER) {
+      const [x0, z0, , z1] = shapes[f].box;
+      minX = Math.min(minX, x0);
+      minZ = Math.min(minZ, z0);
+      maxZ = Math.max(maxZ, z1);
+    }
+    if (Number.isFinite(minX)) {
+      for (const f of FLOOR_ORDER) {
+        this.floorTags.setAnchor(f, new THREE.Vector3(minX - 12, storeyY(f, this.spread), (minZ + maxZ) / 2));
+      }
+    }
   }
 
   private setPin(at: THREE.Vector3 | null): void {
@@ -1105,7 +1115,7 @@ export class MapViewer3D {
   }
 
   resetView(): void {
-    // Straight down and north up: the whole school, filling the screen the
+    // North up: the whole school, filling the screen the
     // way a map opens on the place you searched for. Fitted on the plan's
     // bounding box, not a sphere round it — the building is far wider than
     // it is tall, and a sphere leaves it a strip across the middle.
@@ -1129,7 +1139,10 @@ export class MapViewer3D {
       (size.x * 0.5 * 1.02) / halfFov / ((w / h) * this.visibleWidthFraction(w))
     );
     const dist = clamp(fit, CAMERA.minDistance, CAMERA.maxDistance);
-    this.placeCamera(c, dist, MAP_ELEVATION_DEG, 0);
+    // Opens leaned back, so the floors are seen stacked the way the building
+    // is, not as one flat sheet. Leaning back foreshortens the plan, so the
+    // fit is a little generous rather than exact.
+    this.placeCamera(c, dist * 1.05, TILTED_ELEVATION_DEG, 0);
   }
 
   /**
@@ -1383,7 +1396,8 @@ export class MapViewer3D {
       Math.max(1, this.host.clientWidth),
       Math.max(1, this.host.clientHeight),
       this.props.activeFloor,
-      !this.flight && stackForElevation(this.currentElevationDeg()) > 0.5
+      !this.flight && stackForElevation(this.currentElevationDeg()) > 0.5,
+      Math.max(1, this.host.clientWidth) * (1 - this.visibleWidthFraction())
     );
     this.dirty = false;
   };

@@ -68,12 +68,13 @@ export const GROUND_Y = -8;
 // is a model you stop trusting. So the stack is simply always open, and tilt
 // is a camera-only effect.
 
-// Storey separation, fixed. Tilted, all three storeys are on screen at once,
-// so they have to come visibly apart: at 110 ft and a 40-45° tilt Upper sat
-// almost on top of Main and nobody could say which plate was which. At 220 ft
-// each floor has its own band of the screen, and flat it changes nothing,
-// because only the floor being read is drawn there.
-export const SPREAD = 220;
+// Storey separation, fixed. The floors sit directly on top of each other,
+// as they do in the building — the owner's ask, after a 220 ft gap made
+// them read as three maps side by side. Real floor-to-floor is about 16 ft
+// (SPREAD_COMPACT); 40 is a gentle exaggeration so that at the default tilt
+// each storey's edge and walls still show between its neighbours. Flat it
+// changes nothing, because only the floor being read is drawn there.
+export const SPREAD = 40;
 
 /** Matches FLOOR_HEIGHT in directions.ts — the storeys' real spacing. */
 export const SPREAD_COMPACT = 16;
@@ -165,8 +166,8 @@ export const STACK = {
   belowSlab: 0.75,
   belowWalls: 0.7,
   /** Floors above sit between you and the one you are reading: glass. */
-  aboveSlab: 0.28,
-  aboveWalls: 0.45,
+  aboveSlab: 0.2,
+  aboveWalls: 0.3,
 } as const;
 
 /** How much further back the 3D button puts the camera, to fit the stack. */
