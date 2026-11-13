@@ -16,11 +16,12 @@ export const PALETTE = {
 
   slabTop: 0xffffff, // multiplier over the drawn plan
   slabTopMuted: 0xd7dade, // a storey below the focused one
-  slabEdge: 0xd2d5da,
+  slabEdge: 0xaeb4bb, // the slab's cut edge, seen when tilted
+  slabShadow: 0x3c4043,
 
-  wallSide: 0xd9dce0,
-  wallCap: 0xa9afb6, // INK.wall, so a wall seen end-on is the same line
-  wallEdgeLine: 0xb4b9bf,
+  wallSide: 0xc4c9cf,
+  wallCap: 0x7f868e, // INK.wall, so a wall seen end-on is the same line
+  wallEdgeLine: 0x6f767e,
 
   curb: 0xc6cad0, // below-focus storeys, unlit on purpose
   ghostLine: 0x9aa0a6,
@@ -33,6 +34,9 @@ export const PALETTE = {
   maroon: 0x202124, // the start marker: a dark ring, as on any map
   accent: 0xea4335, // the destination pin: map red
 } as const;
+
+/** The floor plate's drop shadow: feet east/south, and how dark. */
+export const SLAB_SHADOW = { dx: 4, dz: 7, opacity: 0.2 } as const;
 
 export interface RibbonLayer {
   width: number;
@@ -137,6 +141,7 @@ export function clamp(v: number, lo: number, hi: number): number {
 export interface Materials {
   slab: THREE.MeshBasicMaterial;
   slabSkirt: THREE.MeshLambertMaterial;
+  slabShadow: THREE.MeshBasicMaterial;
   wallCap: THREE.MeshStandardMaterial;
   wallSide: THREE.MeshStandardMaterial;
   wallEdges: THREE.LineBasicMaterial;
@@ -187,7 +192,7 @@ export function createMaterials(): Materials {
   const wallEdges = new THREE.LineBasicMaterial({
     color: PALETTE.wallEdgeLine,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.7,
   });
 
   const ribbon = (w: RibbonLayer, offset: boolean) =>
@@ -207,6 +212,13 @@ export function createMaterials(): Materials {
   return {
     slab,
     slabSkirt,
+    slabShadow: new THREE.MeshBasicMaterial({
+      color: PALETTE.slabShadow,
+      transparent: true,
+      opacity: SLAB_SHADOW.opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
     wallCap,
     wallSide,
     wallEdges,

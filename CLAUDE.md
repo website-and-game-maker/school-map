@@ -113,9 +113,12 @@ it before changing the extraction.
   button animates between flat and 45°, and the compass appears once the map
   is turned. Flat, walls are not extruded at all (the plate draws them as
   smooth outlines; extruded boxes from above are stair-stepped); they rise to
-  only a tenth of real height as the map tilts, a lip rather than a cut-away
-  model. The look is a phone map's indoor view: cool grey ground, white
-  floors, grey walls, named spaces tinted by kind (`lib/placeCategory.ts`
+  40% of real height as the map tilts (a tenth was tried and the owner said
+  the walls and floors had disappeared). The plate draws walls dark
+  (`INK.wall`) and stroked so they survive mipmapping at whole-school zoom,
+  with a heavy outer wall, and the focused slab casts a soft offset shadow
+  (`SLAB_SHADOW` in `theme.ts`) so the floor reads as a floor from above.
+  The look is a phone map's indoor view: cool grey ground, white floors, grey walls, named spaces tinted by kind (`lib/placeCategory.ts`
   drives both the fill and the label colour), a solid blue route and a red
   destination pin. On a laptop the panel floats over the map's top-left
   corner and the viewer frames into the rest (`obscuredLeft`, the sideways
@@ -140,16 +143,19 @@ it before changing the extraction.
   pixelated; `straighten()` is the pass that removes scanner bumps and snaps
   near-axis edges to exact.
 
-- **The floor selector is automatic** — it follows the route, and when a pan
-  or zoom settles, `autoFloor.ts` counts the places (rooms, named spaces,
-  entrances, marked stairs/restrooms) each floor has under the middle of the
-  view; another floor takes over only with at least 2x as many. The storeys
-  overlap a lot, so in the middle of the school it stays put on purpose;
-  the 100s under the south-east and the upper west wing are where it
-  switches. Picking a floor by hand pins it until the map moves ~160 ft
-  away. Zoomed out to the whole school it never switches. The chips are a
-  readout you can override, not the main way in; a pill says which floor it
-  switched to.
+- **The floor selector is automatic** — it follows the route, and ~0.3 s
+  after a pan or zoom gesture ends, `autoFloor.ts` samples a grid over the
+  visible map (centre-weighted, minus whatever the panel covers), drops each
+  sample on the ground, and scores every floor by the share that lands inside
+  its footprint. Another floor takes over when it covers at least 20% of the
+  view and 1.4x (and 12 points) more than the current one, so where storeys
+  overlap it stays put. It used to count labels in a small circle, which Main
+  always won (it has a room number nearly everywhere), and it waited for
+  damping to go fully quiet, which took seconds — together the reason it
+  "didn't really work". Picking a floor by hand pins it until the map moves
+  ~160 ft away, or off that floor entirely. Zoomed out to the whole school it
+  never switches. The chips are a readout you can override; a pill says which
+  floor it switched to. In dev the console logs each floor's coverage.
 
 - **The world outside is real OpenStreetMap data** (`src/data/outdoor.json`,
   drawn by `src/three/outdoor.ts` just under the slab of whichever floor is

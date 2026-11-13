@@ -84,11 +84,11 @@ export function roomsOf(floor: FloorId): RoomsFile {
 export const INK = {
   paper: "#e8eaed",
   corridor: "#ffffff",
-  room: "#ebedf0",
-  outline: "#d2d6db",
-  wall: "#a9afb6",
+  room: "#e7eaee",
+  outline: "#c3c8ce",
+  wall: "#7f868e",
   /** The building's outer edge, so it stands off the ground. */
-  footprint: "#b9bec5",
+  footprint: "#7f868e",
   label: "#5f6368",
 } as const;
 
@@ -144,13 +144,17 @@ export function renderFloorPlan(floor: FloorId, opts: FloorPlanOptions): HTMLCan
   // through, and the map reads as though it has holes punched in it.
   ctx.fillStyle = INK.corridor;
   ctx.strokeStyle = INK.footprint;
-  ctx.lineWidth = Math.max(2, 3 / scale);
+  // The outer wall is drawn heavier than the partitions, the way a plan
+  // draws an exterior wall: it is what says "this is the edge of the floor".
+  ctx.lineWidth = Math.max(8, 3 / scale);
   ctx.lineJoin = "round";
   for (const part of walls.footprint) {
     if (part.outer.length >= 6) {
+      // Filled, then stroked: the 3D plate is cut to this same outline, so
+      // only the inner half of the line survives, and it has to be on top.
       path(part.outer);
-      ctx.stroke();
       ctx.fill();
+      ctx.stroke();
     }
   }
 
@@ -190,6 +194,11 @@ export function renderFloorPlan(floor: FloorId, opts: FloorPlanOptions): HTMLCan
     // Non-zero winding: trace_loops gives holes the opposite winding to their
     // outer ring, so a courtyard inside a wall block stays hollow.
     ctx.fill("nonzero");
+    // Stroked too, so a partition keeps some body once the texture is
+    // mipmapped down for the whole-school view instead of fading to nothing.
+    ctx.strokeStyle = INK.wall;
+    ctx.lineWidth = 2;
+    ctx.stroke();
   } else {
     const q = walls.quant;
     const b = walls.boxes;
