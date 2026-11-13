@@ -122,9 +122,17 @@ it before changing the extraction.
   drives both the fill and the label colour), a solid blue route and a red
   destination pin. On a laptop the panel floats over the map's top-left
   corner and the viewer frames into the rest (`obscuredLeft`, the sideways
-  twin of `obscuredBottom`). Only storeys *below* the
-  active one ghost in when tilted, faintly; the ones above stay hidden. The
-  storey stack is still always 110 ft apart — the camera, not the model, is
+  twin of `obscuredBottom`). Tilted, **every floor is shown at once** as a stack —
+  the owner's words on a one-floor-at-a-time view were "that defeats the whole
+  purpose". The floor being read is solid; floors below are muted but real
+  (walls and all), floors above are light glass plates with an outline, so
+  you never read through one (`STACK` and `stackForElevation` in `units.ts`).
+  Each plate carries a tappable floor-name pill (`three/floorTags.ts`), and
+  tapping another floor's plate also switches to it. Flat, only the active
+  floor is drawn, because the storeys project onto each other. The storey
+  stack is always 220 ft apart (110 overlapped too much to tell the floors
+  apart at a 40° tilt), and the 3D button leans to the full tilt and steps
+  back 1.3x to fit it — the camera, not the model, is
   what changes, and it is still one renderer: the 3D button moves the camera
   of the same scene, it does not swap to the 2D renderer. Editing is the one
   thing that uses the 2D renderer, because the edit overlay is SVG.
@@ -224,7 +232,8 @@ Two bugs that *are* fixed, recorded because the dead ends are worth knowing:
   the straight-line skeleton all fail — see the commit message on the fix for the
   measurements. What works is a per-component *shape* test applied before the
   heal, while the artefacts are still free-floating.
-- **"All Levels" layering.** Fixed by raising the storey spread to 110 ft.
+- **"All Levels" layering.** Fixed by raising the storey spread to 110 ft,
+  later 220 ft once all floors are shown together.
 - **Doors drawn open, furniture noise, pixelated walls.** All three were the
   same root cause — "a wall is a long straight run of ink" — and all three went
   away with the separator definition above. Do not reach for a door-arc
