@@ -20,11 +20,13 @@
 //     inside the other's mass. Measured: it put the shared entrances 220-400 ft
 //     apart and the overlay was visibly wrong.
 //
-// What ships: rotation pinned to 0, scale and translation fit by least squares
-// over the shared entrances (the only real correspondences in the data), then
-// nudged a maximum of 40 px onto the wall structure. Residuals are 10-51 ft,
-// which is good enough to read as one building and not good enough to call
-// verified — hence the flag.
+// What ships (tools/register_floors.py): every sheet also draws the other
+// levels' outlines — Lower outlines the whole building, Main marks the Lower
+// gym, cafeteria and Black Box and hatches the Upper gym, Upper outlines
+// Main's middle — so the sheets share the same physical walls. Lower and Upper
+// are fitted onto Main together (scale, rotation and translation) by matching
+// those long strokes across all three pairs at once. Still unverified: a fit
+// to drawings, not a survey.
 
 import type { FloorId } from "../types";
 import { sitePxToWorldXZ, worldXZToSitePx } from "./units";
@@ -33,7 +35,7 @@ import align3d from "../data/floors/align3d.json";
 export interface FloorPlacement {
   floor: FloorId;
   scale: number;
-  /** Always 0. Kept in the format because the align overlay can edit it. */
+  /** Degrees; a fraction of one, from the scans' own skew. */
   rotationDeg: number;
   tx: number;
   ty: number;

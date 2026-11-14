@@ -166,8 +166,8 @@ export const STACK = {
   belowSlab: 0.75,
   belowWalls: 0.7,
   /** Floors above sit between you and the one you are reading: glass. */
-  aboveSlab: 0.2,
-  aboveWalls: 0.3,
+  aboveSlab: 0.1,
+  aboveWalls: 0.25,
 } as const;
 
 /** How much further back the 3D button puts the camera, to fit the stack. */
