@@ -94,11 +94,18 @@ it before changing the extraction.
   position that is known and one that is believed.
 - **`PX_PER_FOOT = 2.6`** in `src/lib/directions.ts` is that constant. Correct it
   there and nothing else, if anyone ever measures a real distance.
-- **Storey alignment is only good to 10–51 ft.** The three sheets are separate
-  scans with no registration marks. Every non-reference floor in `align3d.json`
-  is `"verified": false`. Do not treat it as ground truth. Edit mode can now nudge
-  it by hand, and the stairwell columns are the instrument: a leaning column is
-  the registration error drawn at full size.
+- **Storey alignment comes from shapes every sheet shares.** The three sheets
+  are separate scans with no registration marks, but each draws more than its
+  own floor: Lower outlines the whole building, Main hatches the Upper gym and
+  band hall and outlines the Lower cafeteria, gym and Black Box, Upper outlines
+  Main's middle. `tools/register_floors.py` fits Lower and Upper onto Main
+  (scale, rotation, shift) by matching those long strokes on all three pairs
+  at once, and writes `align3d.json` (Upper was 7% too small before; Lower's
+  gym now sits on the outline Main draws for it). Still `"verified": false`:
+  it is a fit, not a survey. `tools/fix_footprints.py` keeps the plates to
+  the building (Lower's footprint used to take in the outdoor pocket south of
+  the 161-175 rows, Main's the Black Box drawn as Lower-level context). Edit
+  mode can still nudge a storey, and the stairwell columns show any lean.
 - **Stairwells and restrooms are not on the plan.** They are marked by hand in
   the app's Edit mode, one marker per stairwell per floor — placing a second one
   nearby moves the first rather than adding a rival, so "which stairwell is this"

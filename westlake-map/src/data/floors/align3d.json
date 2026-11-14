@@ -9,18 +9,18 @@
   },
   "lower": {
     "floor": "lower",
-    "scale": 1.356,
-    "rotationDeg": 0,
-    "tx": -819.0,
-    "ty": -550.0,
+    "scale": 1.4257,
+    "rotationDeg": -0.132,
+    "tx": -965.1,
+    "ty": -638.3,
     "verified": false
   },
   "upper": {
     "floor": "upper",
-    "scale": 1.0314,
-    "rotationDeg": 0,
-    "tx": -577.0,
-    "ty": -265.0,
+    "scale": 1.104,
+    "rotationDeg": -0.693,
+    "tx": -714.6,
+    "ty": -372.8,
     "verified": false
   }
 }
