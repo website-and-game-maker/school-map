@@ -580,6 +580,36 @@
    "kind": "room",
    "label": "425G",
    "source": "scan-accepted"
+  },
+  "Fieldhouse Gym": {
+   "x": 543.9,
+   "y": 680.6,
+   "kind": "landmark",
+   "label": "Fieldhouse Gym"
+  },
+  "Varsity Athletics": {
+   "x": 888.7,
+   "y": 720.6,
+   "kind": "landmark",
+   "label": "Varsity Athletics"
+  },
+  "Choir Room": {
+   "x": 797.6,
+   "y": 1214.5,
+   "kind": "landmark",
+   "label": "Choir Room"
+  },
+  "Performing Arts Center": {
+   "x": 408.1,
+   "y": 1320.6,
+   "kind": "landmark",
+   "label": "Performing Arts Center"
+  },
+  "Band Hall": {
+   "x": 643.4,
+   "y": 1529.4,
+   "kind": "landmark",
+   "label": "Band Hall"
   }
  },
  "edges": [

@@ -48,18 +48,6 @@
    "kind": "room",
    "source": "traced"
   },
-  "Fieldhouse Gym": {
-   "x": 601.6,
-   "y": 709.5,
-   "kind": "landmark",
-   "label": "Fieldhouse Gym"
-  },
-  "Varsity Athletics": {
-   "x": 868.9,
-   "y": 737.9,
-   "kind": "landmark",
-   "label": "Varsity Athletics"
-  },
   "Entrance B": {
    "x": 401.0,
    "y": 894.0,
@@ -71,48 +59,6 @@
    "y": 894.0,
    "kind": "entrance",
    "label": "Chap Court Entrance (C)"
-  },
-  "Chap Court": {
-   "x": 1086.2,
-   "y": 1021.7,
-   "kind": "landmark",
-   "label": "Chap Court"
-  },
-  "Counseling": {
-   "x": 1219.8,
-   "y": 1177.8,
-   "kind": "landmark",
-   "label": "Counseling"
-  },
-  "Choir Room": {
-   "x": 802.1,
-   "y": 1121.0,
-   "kind": "landmark",
-   "label": "Choir Room"
-  },
-  "Performing Arts Center": {
-   "x": 501.3,
-   "y": 1206.1,
-   "kind": "landmark",
-   "label": "Performing Arts Center"
-  },
-  "Administration": {
-   "x": 1136.3,
-   "y": 1319.7,
-   "kind": "landmark",
-   "label": "Administration"
-  },
-  "Band Hall": {
-   "x": 685.1,
-   "y": 1366.0,
-   "kind": "landmark",
-   "label": "Band Hall"
-  },
-  "Commons": {
-   "x": 1320.1,
-   "y": 1353.2,
-   "kind": "landmark",
-   "label": "Commons"
   },
   "Entrance A": {
    "x": 1186.4,
@@ -132,18 +78,6 @@
    "kind": "landmark",
    "label": "Baseball Field"
   },
-  "Visual Arts": {
-   "x": 1681.5,
-   "y": 1177.8,
-   "kind": "landmark",
-   "label": "Visual Arts"
-  },
-  "Practice Gym": {
-   "x": 1840.2,
-   "y": 1177.8,
-   "kind": "landmark",
-   "label": "Practice Gym"
-  },
   "Kitchen": {
    "x": 2500,
    "y": 1276,
@@ -153,14 +87,8 @@
   "Cafeteria": {
    "x": 2606,
    "y": 1369,
-   "kind": "room",
-   "label": "Cafeteria"
-  },
-  "Research Center": {
-   "x": 1663.9,
-   "y": 1366.0,
    "kind": "landmark",
-   "label": "Research Center"
+   "label": "Cafeteria"
   },
   "Courtyard": {
    "x": 1910.7,
@@ -171,7 +99,7 @@
   "Sub-Varsity Gym": {
    "x": 2417,
    "y": 1772,
-   "kind": "room",
+   "kind": "landmark",
    "label": "Sub-Varsity Gym",
    "aliases": [
     "106"
@@ -186,7 +114,7 @@
   "Black Box Theater": {
    "x": 2344,
    "y": 1934,
-   "kind": "room",
+   "kind": "landmark",
    "label": "Black Box Theater",
    "aliases": [
     "108"
