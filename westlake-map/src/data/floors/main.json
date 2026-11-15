@@ -228,30 +228,6 @@
    "kind": "landmark",
    "label": "Practice Gym"
   },
-  "Cafeteria": {
-   "x": 2634.3,
-   "y": 1220.3,
-   "kind": "landmark",
-   "label": "Cafeteria"
-  },
-  "Sub-Varsity Gym": {
-   "x": 2579.2,
-   "y": 1480.5,
-   "kind": "landmark",
-   "label": "Sub-Varsity Gym"
-  },
-  "Black Box Theater": {
-   "x": 2340.4,
-   "y": 1735.1,
-   "kind": "landmark",
-   "label": "Black Box Theater"
-  },
-  "Fieldhouse Gym": {
-   "x": 208.9,
-   "y": 496.6,
-   "kind": "landmark",
-   "label": "Fieldhouse Gym"
-  },
   "Baseball Field": {
    "x": 1619.1,
    "y": 496.6,
@@ -947,6 +923,30 @@
    "kind": "room",
    "label": "288C",
    "source": "scan-accepted"
+  },
+  "Counseling": {
+   "x": 777.8,
+   "y": 1036.9,
+   "kind": "landmark",
+   "label": "Counseling"
+  },
+  "Administration": {
+   "x": 659.3,
+   "y": 1239.5,
+   "kind": "landmark",
+   "label": "Administration"
+  },
+  "Commons": {
+   "x": 921.4,
+   "y": 1286.6,
+   "kind": "landmark",
+   "label": "Commons"
+  },
+  "Visual Arts": {
+   "x": 1436.1,
+   "y": 1035.4,
+   "kind": "landmark",
+   "label": "Visual Arts"
   }
  },
  "edges": [

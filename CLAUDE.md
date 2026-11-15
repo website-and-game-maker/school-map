@@ -106,6 +106,9 @@ it before changing the extraction.
   the building (Lower's footprint used to take in the outdoor pocket south of
   the 161-175 rows, Main's the Black Box drawn as Lower-level context). Edit
   mode can still nudge a storey, and the stairwell columns show any lean.
+  `tools/fix_landmark_floors.py` moved the named places Lower had
+  claimed from the other sheets' context labels (Counseling, Choir, Band
+  Hall, PAC and others) onto their real floor; it is idempotent.
 - **Stairwells and restrooms are not on the plan.** They are marked by hand in
   the app's Edit mode, one marker per stairwell per floor — placing a second one
   nearby moves the first rather than adding a rival, so "which stairwell is this"
